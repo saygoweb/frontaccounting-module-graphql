@@ -1,0 +1,91 @@
+# Driven by docker/fa-graphql, which resolves every variable below and passes
+# --project-directory. Running `docker compose` here by hand works too, but then
+# PROJECT_ROOT has to be set yourself.
+name: ${COMPOSE_PROJECT_NAME:-fa-graphql}
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PHP_VERSION: "${PHP_VERSION:-7.4}"
+        INSTALL_XDEBUG: "${INSTALL_XDEBUG:-true}"
+        USER_UID: "${USER_UID:-1000}"
+        USER_GID: "${USER_GID:-1000}"
+        FA_REPO: "${FA_REPO:-https://github.com/FrontAccountingERP/FA.git}"
+        FA_REF: "${FA_REF:-master}"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      XDEBUG_MODE: "${XDEBUG_MODE:-off}"
+      FA_TIMEZONE: "${FA_TIMEZONE:-UTC}"
+      # Read by the entrypoint, which writes config_db.php from them.
+      FA_DB_HOST: db
+      FA_DB_NAME: "${DB_NAME:-fa_graphql}"
+      FA_DB_USER: "${DB_USER:-fa}"
+      FA_DB_PASSWORD: "${DB_PASSWORD:-fa}"
+      FA_DB_PREFIX: "${DB_PREFIX:-0_}"
+      # Read by tests/Http. Apache is on 8000 inside the container, whatever the
+      # host port is, and phpunit runs in here with it.
+      FA_GRAPHQL_URL: "http://localhost:8000/modules/graphql/"
+    volumes:
+      # Only the module. FrontAccounting itself is image content, cloned at
+      # build time, so there is no second checkout to keep in step and nothing
+      # of FA's for the entrypoint's generated config to overwrite.
+      - ${PROJECT_ROOT:?set PROJECT_ROOT or use docker/fa-graphql}:/var/www/html/modules/graphql
+    ports:
+      - "${HTTP_PORT:-8100}:8000"
+    extra_hosts:
+      # What xdebug.client_host resolves to. Docker Desktop provides this; on
+      # Linux it has to be asked for.
+      - "host.docker.internal:host-gateway"
+
+  db:
+    image: mariadb:${MARIADB_VERSION:-10.11}
+    restart: unless-stopped
+    # No --sql-mode here on purpose. FrontAccounting sets its own on every
+    # connection — `db_query("SET sql_mode = '".SQL_MODE."'")` in
+    # includes/db/connect_db_mysqli.inc — so the server default is overwritten
+    # before FA runs a single query. Anorm's PDO connection does get the server
+    # default, which is what a production MariaDB gives it too.
+    environment:
+      MYSQL_ROOT_PASSWORD: "${DB_ROOT_PASSWORD:-fa}"
+      MYSQL_DATABASE: "${DB_NAME:-fa_graphql}"
+      MYSQL_USER: "${DB_USER:-fa}"
+      MYSQL_PASSWORD: "${DB_PASSWORD:-fa}"
+    volumes:
+      - db-data:/var/lib/mysql
+    ports:
+      - "${DB_PORT:-3320}:3306"
+    healthcheck:
+      # app waits on this: mariadb's entrypoint starts the server twice, and
+      # connecting during the first, bootstrap pass gets a connection that dies.
+      # Probing over TCP rather than the socket is what tells the two apart —
+      # the bootstrap server runs with --skip-networking.
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # Opt-in: `fa-graphql up --with-tools`, or `docker compose --profile tools up`.
+  phpmyadmin:
+    image: phpmyadmin
+    profiles: ["tools"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PMA_HOST: db
+      PMA_USER: "${DB_USER:-fa}"
+      PMA_PASSWORD: "${DB_PASSWORD:-fa}"
+      UPLOAD_LIMIT: 128M
+    ports:
+      - "${PMA_PORT:-8101}:80"
+
+volumes:
+  db-data:

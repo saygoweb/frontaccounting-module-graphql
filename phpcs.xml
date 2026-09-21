@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<ruleset name="FrontAccounting GraphQL">
+    <description>Coding standard for the FrontAccounting GraphQL module.</description>
+
+    <rule ref="PSR12"/>
+
+    <!-- src/ and tests/ only. hooks.php is FrontAccounting-style by contract:
+         a global, snake_case hooks_<module> class. php -l covers it. -->
+    <file>src</file>
+    <file>tests</file>
+    <file>index.php</file>
+
+    <exclude-pattern>vendor/*</exclude-pattern>
+
+    <arg value="p"/>
+    <arg name="colors"/>
+    <arg value="s"/>
+</ruleset>

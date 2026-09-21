@@ -1,0 +1,11 @@
+.DS_Store
+vendor/
+node_modules/
+.vscode/
+*.zip
+*.tgz
+docker/.env
+tmp/
+
+# phpunit's test-order cache
+.phpunit.result.cache

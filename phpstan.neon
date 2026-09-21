@@ -1,0 +1,18 @@
+parameters:
+    level: 5
+
+    # FrontAccounting is a .inc codebase. Without this, scanDirectories below
+    # finds almost none of it.
+    fileExtensions:
+        - php
+        - inc
+
+    paths:
+        - src
+
+    # FrontAccounting itself, two directories up: this module lives at
+    # modules/graphql inside an FA tree, and that is equally true inside the
+    # docker stack, where the checkout is bind-mounted at
+    # /var/www/html/modules/graphql. Read for symbols only, never analysed.
+    scanDirectories:
+        - ../../includes

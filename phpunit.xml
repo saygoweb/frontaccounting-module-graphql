@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.6/phpunit.xsd"
+	bootstrap="vendor/autoload.php"
+	colors="true"
+	convertDeprecationsToExceptions="false"
+>
+	<testsuites>
+		<!-- No FrontAccounting, no database, no web server. -->
+		<testsuite name="unit">
+			<directory>tests/Unit</directory>
+		</testsuite>
+		<!-- Drives Apache over HTTP; needs the docker stack (or an FA install). -->
+		<testsuite name="http">
+			<directory>tests/Http</directory>
+		</testsuite>
+	</testsuites>
+</phpunit>
