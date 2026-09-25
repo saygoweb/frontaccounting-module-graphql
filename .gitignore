@@ -6,6 +6,7 @@ node_modules/
 *.tgz
 docker/.env
 tmp/
+config_graphql.php
 
 # phpunit's test-order cache
 .phpunit.result.cache

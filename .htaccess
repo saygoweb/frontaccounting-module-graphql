@@ -1,4 +1,25 @@
 Options -MultiViews
 RewriteEngine on
+
+# Never served, whatever the vhost allows. By prefix, not by `.php$`, so a
+# renamed or backup copy (config_graphql.php.bak, config_graphql.php~, ...) is
+# denied too: the file existing on disk would otherwise skip the routing rule
+# below and Apache would serve it, secret included.
+RewriteRule ^config_graphql - [F,L]
+RewriteRule ^(sql|src|tests|vendor|docs|docker|tmp)/ - [F,L]
+RewriteRule ^(container|hooks)\.php$ - [F,L]
+
+# Dot-files and dot-directories (.git/, .env, .superpowers/, .phpunit.result.cache,
+# ...) are never served, wherever they sit in the tree.
+RewriteRule (^|/)\. - [F,L]
+
+# This file is the only protection on a production install without the dev
+# vhost's rules, and it must fail closed: only index.php is served directly.
+# Any other real file (composer.json/lock, phpunit.xml, phpcs.xml, README.md,
+# LICENSE, a stray backup, ...) is denied rather than served statically.
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteCond %{REQUEST_URI} !/index\.php$
+RewriteRule ^ - [F,L]
+
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ index.php [QSA,L]

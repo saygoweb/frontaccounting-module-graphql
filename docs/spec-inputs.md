@@ -69,15 +69,19 @@ scaffold turned up.
    `update_databases`), rotated on use and individually revocable. Still open:
    where the signing secret lives. `saygoweb.com-my`
    already uses `lcobucci/jwt ^4.0`, which runs on PHP 7.4.
-5. **Authorisation.** One `SA_GRAPHQL` area exists. Per-entity checks belong in
-   `ModelType::authorize()`, mapped onto FA's existing `SA_*` areas
-   (`SA_CUSTOMER`, `SA_SALESINVOICE`, ...) rather than new ones?
-6. **Multi-company.** `$db_connections[n]` gives host, credentials and `tbpref`
-   per company. The Anorm PDO and the table prefix both have to follow the
-   authenticated company.
+5. ~~Authorisation.~~ **Decided: per-entity checks in `authorize()`, mapped onto
+   FA's existing `SA_*` areas.** `FaModelType::authorize()` calls
+   `Guard::requireFor($this->areas(), $verb)`; each once-only Type declares
+   `areas(): array` (verb => `SA_*` area) rather than a new area of its own. See
+   design spec §4.5 and §5.
+6. ~~Multi-company.~~ **Decided: `CompanyContext`, set once per request.**
+   `FaSession::openCompany()` resolves `$db_connections[$company]` and calls
+   `CompanyContext::set()`; the container's `\PDO` and every model's table prefix
+   are built lazily from it. See design spec §4.2–§4.3.
 7. **Scope and order of entities.** Which tables first; which are read-only.
-8. **Licence.** `modules/api` is GPL-2.0-only, the sgw modules GPL-3, Anorm MIT.
-   None declared here yet.
+8. ~~Licence.~~ **Decided: GPL-3.0-or-later**, matching FrontAccounting and the sgw
+   modules: the `LICENSE` file and `license` in `composer.json`. See design spec
+   §10, step 1.
 9. **Test data.** FA's `en_US-demo.sql` for now. A fixture of this module's own?
 
 ## Naming: models are where the domain language is fixed
@@ -92,8 +96,11 @@ how far `anorm make` output is regenerated versus hand-maintained once renamed.
 Properties ending in `Id` become GraphQL `ID`; FA's `_no` / `_code` foreign keys
 will not unless renamed to end in `Id` — another reason to rename.
 
-## Constraints inherited from anorm-graphql v1
+## Constraints inherited from anorm-graphql 0.1
 
+- `--type-base <class>` (added in Task 9) is how `FaModelType` enters every
+  generated Type: the generated `<Entity>TypeBase` extends the named class
+  instead of `Anorm\GraphQL\ModelType` (design spec §4.5).
 - A model with no single key property is **skipped**. `debtor_trans`
   (`type` + `trans_no`), `gl_trans`-style and other composite-key tables need
   hand-written Types.

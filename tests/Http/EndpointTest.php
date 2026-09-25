@@ -2,7 +2,6 @@
 
 namespace FA\GraphQL\Tests\Http;
 
-use FA\GraphQL\Server;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -11,49 +10,38 @@ use PHPUnit\Framework\TestCase;
  */
 class EndpointTest extends TestCase
 {
-    /** @var string */
-    private $url;
-
-    protected function setUp(): void
-    {
-        $url = getenv('FA_GRAPHQL_URL');
-        $this->url = $url !== false && $url !== '' ? $url : 'http://localhost:8000/modules/graphql/';
-    }
+    use GraphQLClient;
 
     public function testApiVersionOverHttp(): void
     {
-        list($status, $body) = $this->post('{"query": "{ apiVersion }"}');
+        $response = $this->send('POST', '', '{"query": "{ apiVersion }"}');
 
-        $this->assertSame(200, $status);
-        $this->assertSame(['data' => ['apiVersion' => Server::VERSION]], json_decode($body, true));
+        $this->assertSame(200, $response['status']);
+        $this->assertStringStartsWith('application/json', $response['contentType']);
+        $this->assertSame(['data' => ['apiVersion' => '0.1.0']], $response['body']);
+    }
+
+    /**
+     * FrontAccounting reads the superglobals while it loads: `JsHttpRequest=`
+     * would wrap the body as JavaScript, `path_to_root` would die() with HTML.
+     */
+    public function testQueryParametersFrontAccountingReactsToAreIgnored(): void
+    {
+        foreach (['?JsHttpRequest=1-script', '?JsHttpRequest=1-xml', '?path_to_root=x'] as $query) {
+            $response = $this->send('POST', $query, '{"query": "{ apiVersion }"}');
+
+            $this->assertSame(200, $response['status'], $query);
+            $this->assertStringStartsWith('application/json', $response['contentType'], $query);
+            $this->assertSame(['data' => ['apiVersion' => '0.1.0']], $response['body'], $query);
+        }
     }
 
     public function testFrontAccountingIsServingTheModule(): void
     {
         $context = stream_context_create(['http' => ['ignore_errors' => true, 'timeout' => 10]]);
-        $page = file_get_contents(dirname($this->url, 2) . '/index.php', false, $context);
+        $page = file_get_contents(dirname($this->url(), 2) . '/index.php', false, $context);
 
         $this->assertIsString($page);
         $this->assertStringContainsString('FrontAccounting', $page);
-    }
-
-    /**
-     * @return array{0: int, 1: string}
-     */
-    private function post(string $json): array
-    {
-        $context = stream_context_create(['http' => [
-            'method' => 'POST',
-            'header' => "Content-Type: application/json\r\n",
-            'content' => $json,
-            'ignore_errors' => true,
-            'timeout' => 10,
-        ]]);
-        $body = file_get_contents($this->url, false, $context);
-        $this->assertIsString($body, 'no response from ' . $this->url);
-
-        preg_match('#^HTTP/\S+ (\d{3})#', $http_response_header[0], $m);
-
-        return [(int) $m[1], $body];
     }
 }

@@ -22,13 +22,16 @@ this one.
 
 | | |
 | --- | --- |
-| FrontAccounting | cloned into the image at build time from `FA_REPO` / `FA_REF` — upstream `master` by default |
+| FrontAccounting | cloned into the image at build time from `FA_REPO` / `FA_REF` — [`cambell-prince/frontaccounting`](https://github.com/cambell-prince/frontaccounting) `@ master-cp` by default, **required**: it carries `includes/session_utils.inc`, which `FaSession` needs to enter a verified login without FA's own password check |
+| `sgw_sales` | cloned into `/var/www/html/modules/sgw_sales` from `SGW_SALES_REPO` / `SGW_SALES_REF` (`master` by default) the same way, with `composer install --no-dev` run in it; `SGW_SALES_ACTIVE` (default `true`) registers it as extension 2 |
 | this checkout | bind-mounted at `/var/www/html/modules/graphql`, so an edit is live on the next request |
 | `config.php`, `config_db.php`, `lang/installed_languages.inc` | written by the entrypoint, into the image's FA tree |
-| the two `installed_extensions.php` | written by the entrypoint on every start, with this module **registered and active for company 0** — so `hooks.php` is loaded and `SA_GRAPHQL` exists, as it would after Setup → Install/Activate Extensions |
+| the two `installed_extensions.php` | written by the entrypoint on every start, with this module **registered and active for company 0** — so `hooks.php` is loaded and `SA_GRAPHQL` exists, as it would after Setup → Install/Activate Extensions — and `sgw_sales` alongside it when `SGW_SALES_ACTIVE=true` |
+| `config_graphql.php` | written by the entrypoint into this checkout **only if absent**, with a generated 48-byte secret and `allow_insecure_login => true`. Gitignored; never written into production the same way — see `config_graphql.example.php` |
 | `vendor/` | installed by `up`, into your checkout, owned by you |
 
-Nothing is written into your checkout except `vendor/` and `composer.lock`.
+Nothing is written into your checkout except `vendor/`, `composer.lock` and
+`config_graphql.php`.
 
 Apache listens on **8000** inside the container, as in the api stack. `tests/Http`
 reaches it there through `FA_GRAPHQL_URL`, which compose sets. On the host it is
@@ -59,6 +62,33 @@ Defaults are clear of the other stacks on a machine that runs them all:
 to query. This repository ships no fixture of its own yet.
 `docker/fa-graphql db dump` writes a gzipped dump back out.
 
+After the dataset, `db load` also applies each active extension's
+`sql/update_*.sql` (this module's, and `sgw_sales`'s `update_1.0.sql` +
+`update_1.4.sql` when `SGW_SALES_ACTIVE=true`, cut at their `# Upgrade helpers`
+line), then `tests/data/seed.sql`. That seed adds a `GraphQL API` role holding
+`SA_GRAPHQL` plus the sales areas (including `SA_SALESTYPES`, for the `SalesType`
+pilot), a user in it, and a user without `SA_GRAPHQL`:
+
+| user | password | role |
+| --- | --- | --- |
+| `apitest` | `password` | `GraphQL API` (`SA_GRAPHQL`, `SA_SALESTYPES`) |
+| `noapi` | `password` | System Administrator (no `SA_GRAPHQL`) |
+
+The whole sequence is idempotent, so a repeated `db load` (or `up` against an
+already-seeded volume) is safe.
+
+## sgw_sales
+
+The recurring-sales module this API drives in Release 2, and the other
+extension whose hooks share a process with ours. `SGW_SALES_REPO` / `SGW_SALES_REF`
+default to [`saygoweb/frontaccounting-module-sgw_sales`](https://github.com/saygoweb/frontaccounting-module-sgw_sales)
+`@ master`, which has been on Anorm ^3.2.1 since its PR #7 — the Anorm 1.6 before
+that could not be loaded beside this module's. `SGW_SALES_ACTIVE=false` leaves it
+cloned but unregistered (and its tables unloaded). `SGW_SALES_PATH`, like
+`ANORM_GRAPHQL_PATH`, bind-mounts a host checkout over the clone in the image, for
+working on both repositories at once — it needs its own `composer install --no-dev`
+(`docker/fa-graphql exec composer install --no-dev -d /var/www/html/modules/sgw_sales`).
+
 ## Anorm
 
 `docker/fa-graphql anorm [args]` runs Anorm's generator in the container with
@@ -68,7 +98,11 @@ password (`-p`), so it wants a terminal:
     docker/fa-graphql anorm make fa_graphql 0_debtors_master -p \
         -m src/Model/ -n 'FA\GraphQL\Model'
 
-## anorm-graphql before it has a release
+## Co-developing anorm-graphql
+
+`saygoweb/anorm-graphql` normally resolves from its `vcs` repository at the tagged
+release (`^0.1`, `composer.json`) — nothing in this section is needed for ordinary
+use of the stack.
 
 Set `ANORM_GRAPHQL_PATH` in `docker/.env` to a host checkout of
 saygoweb/anorm-graphql and run `docker/fa-graphql up`. It is mounted read-only at
@@ -78,6 +112,13 @@ saygoweb/anorm-graphql and run `docker/fa-graphql up`. It is mounted read-only a
 
 A symlinked path package does not bring its own `vendor/`; this module's
 `composer.json` has to satisfy its requirements.
+
+**Generation (`bin/generate`) runs on the host, not in the container**: it needs
+only PHP and this module's `vendor/`, no database. With a local anorm-graphql
+checkout, point host generation at it with `ANORM_GRAPHQL_CHECKOUT` (for example
+`ANORM_GRAPHQL_CHECKOUT=../../../anorm-graphql bin/generate`) rather than
+`ANORM_GRAPHQL_PATH`: the `/opt/anorm-graphql` symlink this section sets up resolves
+only inside the container.
 
 ## A second PHP version
 

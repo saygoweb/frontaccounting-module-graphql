@@ -1,0 +1,7 @@
+# Added by docker/fa-graphql when SGW_SALES_PATH is set: a host checkout of
+# sgw_sales bind-mounted over the clone in the image, so both repositories can be
+# worked on at once. It needs its own `composer install --no-dev`.
+services:
+  app:
+    volumes:
+      - ${SGW_SALES_PATH}:/var/www/html/modules/sgw_sales

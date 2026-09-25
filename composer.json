@@ -2,16 +2,27 @@
     "name": "saygoweb/frontaccounting-module-graphql",
     "description": "A GraphQL API for FrontAccounting, delivered as a module",
     "type": "project",
+    "license": "GPL-3.0-or-later",
     "authors": [
         {
             "name": "cambell",
             "email": "cambell.prince@gmail.com"
         }
     ],
+    "repositories": {
+        "anorm-graphql": {
+            "type": "vcs",
+            "url": "https://github.com/saygoweb/anorm-graphql"
+        }
+    },
     "require": {
         "php": "^7.4 || ^8.0",
+        "lcobucci/jwt": "^4.0",
         "php-di/php-di": "^6.0",
         "saygoweb/anorm": "^3.2.1",
+        "saygoweb/anorm-graphql": "^0.1",
+        "slim/psr7": "^1.6",
+        "slim/slim": "^4.11",
         "webonyx/graphql-php": "^15.32.3"
     },
     "require-dev": {
@@ -41,6 +52,7 @@
         "cs:check": "phpcs",
         "cs:fix": "phpcbf",
         "analyze": "phpstan analyse --no-progress --memory-limit=512M",
+        "generate": "bin/generate",
         "quality": [
             "@lint",
             "@cs:check",
@@ -57,6 +69,7 @@
         "cs:check": "Check src/ and tests/ against PSR-12 (phpcs.xml).",
         "cs:fix": "Fix what phpcbf can fix automatically.",
         "analyze": "Run PHPStan over src/ (phpstan.neon).",
+        "generate": "anorm-graphql make with this module's options (bin/generate). Runs on the host too: bin/generate.",
         "quality": "lint, cs:check, then analyze.",
         "ci": "quality, then test - the gates docker/fa-graphql ci runs."
     }

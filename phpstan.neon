@@ -9,6 +9,9 @@ parameters:
 
     paths:
         - src
+        - app.php
+        - container.php
+        - index.php
 
     # FrontAccounting itself, two directories up: this module lives at
     # modules/graphql inside an FA tree, and that is equally true inside the
@@ -16,3 +19,7 @@ parameters:
     # /var/www/html/modules/graphql. Read for symbols only, never analysed.
     scanDirectories:
         - ../../includes
+
+    # front_accounting itself lives at the FA root, not under includes/.
+    scanFiles:
+        - ../../frontaccounting.php

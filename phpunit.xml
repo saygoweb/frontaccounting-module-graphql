@@ -11,6 +11,11 @@
 		<testsuite name="unit">
 			<directory>tests/Unit</directory>
 		</testsuite>
+		<!-- FrontAccounting loaded in-process, and the database. Needs the docker stack. -->
+		<testsuite name="integration">
+			<directory>tests/Integration</directory>
+			<directory>tests/Generated</directory>
+		</testsuite>
 		<!-- Drives Apache over HTTP; needs the docker stack (or an FA install). -->
 		<testsuite name="http">
 			<directory>tests/Http</directory>

@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.3']
+    env:
+      PHP_VERSION: ${{ matrix.php }}
+      COMPOSE_PROJECT_NAME: fa-graphql-ci-${{ matrix.php }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, boot, lint, analyze, test
+        run: docker/fa-graphql ci
+      - name: Logs
+        if: failure()
+        run: |
+          docker/fa-graphql logs app || true
+          docker/fa-graphql logs errors || true

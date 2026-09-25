@@ -13,8 +13,10 @@ services:
         INSTALL_XDEBUG: "${INSTALL_XDEBUG:-true}"
         USER_UID: "${USER_UID:-1000}"
         USER_GID: "${USER_GID:-1000}"
-        FA_REPO: "${FA_REPO:-https://github.com/FrontAccountingERP/FA.git}"
-        FA_REF: "${FA_REF:-master}"
+        FA_REPO: "${FA_REPO:-https://github.com/cambell-prince/frontaccounting.git}"
+        FA_REF: "${FA_REF:-master-cp}"
+        SGW_SALES_REPO: "${SGW_SALES_REPO:-https://github.com/saygoweb/frontaccounting-module-sgw_sales.git}"
+        SGW_SALES_REF: "${SGW_SALES_REF:-master}"
     restart: unless-stopped
     depends_on:
       db:
@@ -31,6 +33,11 @@ services:
       # Read by tests/Http. Apache is on 8000 inside the container, whatever the
       # host port is, and phpunit runs in here with it.
       FA_GRAPHQL_URL: "http://localhost:8000/modules/graphql/"
+      # Read by the entrypoint, to register modules/sgw_sales as extension 2 (or
+      # leave it cloned but unregistered).
+      SGW_SALES_ACTIVE: "${SGW_SALES_ACTIVE:-true}"
+      HOST_UID: "${USER_UID:-1000}"
+      HOST_GID: "${USER_GID:-1000}"
     volumes:
       # Only the module. FrontAccounting itself is image content, cloned at
       # build time, so there is no second checkout to keep in step and nothing

@@ -79,15 +79,34 @@ fi
 # hooks.php and hooks_graphql's security area exists the way it would once
 # someone had been through Setup -> Install/Activate Extensions. Written on
 # every start: they are image content, and this is the only author.
+#
+# sgw_sales is added as extension 2 when SGW_SALES_ACTIVE and its clone is
+# present (SGW_SALES_ACTIVE=false or a build without it leaves it out of both
+# lists — cloned, if at all, but unregistered).
 write_extensions() {
     mkdir -p "$(dirname "$1")"
+    sgw=''
+    next=2
+    if [ "${SGW_SALES_ACTIVE:-true}" = "true" ] && [ -f "$FA_ROOT/modules/sgw_sales/hooks.php" ]; then
+        next=3
+        sgw="  2 =>
+  array (
+    'package' => 'sgw_sales',
+    'name' => 'sgw_sales',
+    'version' => '-',
+    'available' => '',
+    'type' => 'extension',
+    'path' => 'modules/sgw_sales',
+    'active' => $2,
+  ),"
+    fi
     cat > "$1" <<EOF
 <?php
 
-/* Written by docker/docker-entrypoint.sh. See the FrontAccounting extension
-	system documentation for the format. */
+/* Written by docker/docker-entrypoint.sh. This module must stay extension 1:
+	tests/data/seed.sql grants area 91236, which is derived from that id. */
 
-\$next_extension_id = 2;
+\$next_extension_id = $next;
 
 \$installed_extensions = array (
   1 =>
@@ -100,6 +119,7 @@ write_extensions() {
     'path' => 'modules/graphql',
     'active' => $2,
   ),
+$sgw
 );
 EOF
 }
@@ -142,5 +162,26 @@ chown -R www-data:www-data "$FA_ROOT/tmp" "$FA_ROOT/company" 2>/dev/null || true
 # not have, and a pid file left by an unclean stop makes Apache refuse to start.
 mkdir -p /var/run/apache2
 rm -f /var/run/apache2/apache2.pid
+
+# The module's own settings. Written into the bind-mounted checkout, where it is
+# gitignored, and only when absent: a secret that changed on every start would
+# invalidate every token with it.
+GQL_CONFIG="$FA_ROOT/modules/graphql/config_graphql.php"
+if [ ! -f "$GQL_CONFIG" ]; then
+    secret="$(php -r 'echo bin2hex(random_bytes(24));')"
+    cat > "$GQL_CONFIG" <<EOF
+<?php
+
+/* Written by docker/docker-entrypoint.sh for the test stack. Not for production:
+	see config_graphql.example.php. */
+
+return array(
+    'secret' => '$secret',
+    'allow_insecure_login' => true,
+    'debug' => true,
+);
+EOF
+    chown "${HOST_UID:-1000}:${HOST_GID:-1000}" "$GQL_CONFIG" 2>/dev/null || true
+fi
 
 exec "$@"

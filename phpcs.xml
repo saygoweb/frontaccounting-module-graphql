@@ -9,6 +9,8 @@
     <file>src</file>
     <file>tests</file>
     <file>index.php</file>
+    <file>app.php</file>
+    <file>container.php</file>
 
     <exclude-pattern>vendor/*</exclude-pattern>
 

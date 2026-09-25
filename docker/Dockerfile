@@ -69,20 +69,33 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # FrontAccounting itself
 # ---------------------------------------------------------------------------
 #
-# Point these at a fork or a tag to test against something other than upstream
-# master — FA_REPO=https://github.com/cambell-prince/frontaccounting.git with
-# FA_REF=master-cp, for instance. A shallow clone needs a branch or tag name; a
-# bare commit sha will not work.
+# The fork is required, not just a default: it carries includes/session_utils.inc,
+# which FaSession needs to enter a verified login without FA's own password check.
+# Point FA_REPO/FA_REF elsewhere only to test against a different fork or tag; a
+# shallow clone needs a branch or tag name, a bare commit sha will not work.
 #
 # Changing either needs `fa-graphql up --build`; the clone is a build step, so a
 # running container keeps the tree it was built with.
-ARG FA_REPO=https://github.com/FrontAccountingERP/FA.git
-ARG FA_REF=master
+ARG FA_REPO=https://github.com/cambell-prince/frontaccounting.git
+ARG FA_REF=master-cp
 RUN set -eux; \
     rm -rf /var/www/html; \
     git clone --depth 1 --branch "${FA_REF}" "${FA_REPO}" /var/www/html; \
     git -C /var/www/html log -1 --format='FrontAccounting %h %ad %s' --date=short; \
     git config --system --add safe.directory /var/www/html
+
+# sgw_sales — the recurring-sales module this API drives in Release 2, and the
+# other extension whose hooks share a process with ours. master is on Anorm ^3.2.1
+# since its PR #7; the Anorm 1.6 before that could not be loaded beside ours.
+# Release 2 will want feature/GenerateService (PR #8) until that merges.
+# vendor/ is not in its repository.
+ARG SGW_SALES_REPO=https://github.com/saygoweb/frontaccounting-module-sgw_sales.git
+ARG SGW_SALES_REF=master
+RUN set -eux; \
+    git clone --depth 1 --branch "${SGW_SALES_REF}" "${SGW_SALES_REPO}" /var/www/html/modules/sgw_sales; \
+    cd /var/www/html/modules/sgw_sales; \
+    COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --no-progress; \
+    git config --system --add safe.directory /var/www/html/modules/sgw_sales
 
 # Debian keeps a conf.d per SAPI rather than the single one the official php
 # images have, and the CLI (phpunit, composer, php -l) must see the same

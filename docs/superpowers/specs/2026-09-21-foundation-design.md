@@ -136,7 +136,7 @@ which is how FrontAccounting turns a database error into a 200 with an HTML or e
 body.
 
 `Bootstrap::boot()` includes what `modules/api/session-custom.inc` includes, cut to
-what an API needs: `errors.inc`, `current_user.inc`, `frontaccounting.php`,
+what an API needs: ~~`errors.inc`~~ *(revised: see below)*, `current_user.inc`, `frontaccounting.php`,
 `admin/db/security_db.inc`, the language and gettext includes, `config_db.php`,
 `config.php`, `ui/ui_msgs.inc`, `prefs/sysprefs.inc`, `hooks.inc` with every
 installed extension's `hooks.php`, `access_levels.inc`, `version.php`, `main.inc`,
@@ -155,9 +155,57 @@ sends no headers.
   `session.inc`, which cannot be included. Foundation therefore requires the fork
   and fails closed with a message saying so when the file is absent. Supporting
   upstream (by shipping a copy, as `modules/api` does) is out of scope.
+  *(revised)* The check runs inside the pipeline, so the `ConfigException` it
+  throws reaches `JsonErrorMiddleware`, which answers 500 `INTERNAL` with the
+  message `The GraphQL module is not configured: <reason>`, as `index.php` does for
+  a configuration failure before the app exists, rather than a bare
+  `Internal server error`.
 - `TB_PREF` is the literal placeholder `&TB_PREF&`, substituted by `db_query()`.
   The real prefix is `$db_connections[$coy]['tbpref']`, which is what
   `CompanyContext` holds.
+
+*(revised)* **`errors.inc` is not included.** Its `fa_trigger_error()` hands
+`E_USER_ERROR` to FrontAccounting's `error_handler()` by a direct function call, not
+through `trigger_error()`, so it bypasses `set_error_handler()`; and
+`check_db_error()` ends the request with `end_page(); exit` whatever `go_debug` says.
+No handler installed by `Bootstrap` can see or stop either. `Bootstrap` loads
+`src/Fa/fa_errors_compat.php` in its place, which defines the functions other
+FrontAccounting files call by name (`fa_trigger_error`, `display_db_error`,
+`frindly_db_error`, `check_db_error`, `get_backtrace`, `exception_handler`,
+`fmt_errors`, `error_box`, `end_flush`) and initialises `$messages` and
+`$before_box`:
+
+- `fa_trigger_error()` collects every level into `FaMessages`. `display_error()`
+  raises `E_USER_ERROR` for validation messages, so the level alone cannot mean
+  "stop".
+- `display_db_error()` throws `FaErrorException`.
+- `check_db_error()` reads the database error, and logs it to `tmp/errors.log`,
+  before it rolls back (the rollback resets mysqli's error number), then throws
+  `FaErrorException` whenever `$exit_if_error` is set, a friendly duplicate-key
+  error included. Nothing after a failed `db_query($sql, $msg)` runs, so nothing
+  after a rolled-back `begin_transaction()` can autocommit. Only
+  `$exit_if_error = false` with a duplicate key returns.
+
+This is a hand-copied re-implementation and will drift from FrontAccounting's.
+**Recommendation: move the seam into the `cambell-prince/frontaccounting` fork
+before Release 2's first write**: split `errors.inc` into its logic and its
+`error_box`/`fmt_errors` rendering (as the fork already did for
+`session_utils.inc`), and have `check_db_error()` / `display_db_error()` throw a
+fork-defined exception instead of `end_page(); exit` when a flag such as
+`FA_ERRORS_THROW` is defined. The module already requires the fork, so this costs
+no compatibility, and FrontAccounting's friendly-error and rollback rules then live
+in one maintained place.
+
+*(revised)* **FrontAccounting does not see the HTTP request.** The API reads its
+request through PSR-7, built in `index.php` before the app runs. Before any include,
+`Bootstrap` empties `$_GET`, `$_POST`, `$_REQUEST`, `$_COOKIE`, `$_FILES` and
+`$_SERVER['QUERY_STRING']`: FrontAccounting reads them at include time
+(`path_to_root` makes `frontaccounting.php`, `config.php` and `language.inc`
+`die()`; `JsHttpRequest=` makes `new Ajax()` install an output handler that rewrites
+the body as JavaScript). It forces `display_errors` off, installs its error handler
+before the first include, points `error_log` at `$error_logfile` as `session.inc`
+does, and discards any output buffer the includes leave open. Release 2 code must
+not expect FrontAccounting functions to read request input from the superglobals.
 
 FrontAccounting's root is `../..` from the module directory, overridable in
 `config_graphql.php` (`fa_root`).
@@ -168,11 +216,12 @@ carries identity and FrontAccounting's per-user state is rebuilt from it on ever
 request. Requests are stateless and safe in parallel.
 
 **Error handler.** `Bootstrap` installs a handler that converts `E_USER_ERROR`
-(FrontAccounting's "DATABASE ERROR") and any `E_ERROR`-class condition into
-`FaErrorException`. `E_USER_WARNING` and `E_USER_NOTICE` — FrontAccounting's
-validation messages raised through `display_error()` / `display_notification()` —
-are collected into a `FaMessages` buffer, which `FA_REJECTED` errors draw on
-(section 6). Deprecations and notices from FrontAccounting's own code are logged,
+and `E_RECOVERABLE_ERROR` raised through `trigger_error()` into `FaErrorException`.
+*(revised)* FrontAccounting's own "DATABASE ERROR" does not reach it: it is thrown
+by the `errors.inc` replacement above. FrontAccounting's validation messages,
+raised through `display_error()` / `display_warning()` / `display_notification()`,
+never reach it either: the replacement's `fa_trigger_error()` collects them into a
+`FaMessages` buffer, which `FA_REJECTED` errors draw on (section 6). Deprecations and notices from FrontAccounting's own code are logged,
 not thrown: FrontAccounting is not clean under `E_ALL` on PHP 8.
 
 ### 2.2 `FaSession`
@@ -277,10 +326,26 @@ access token either way. It returns `true` when at least one token was revoked.
    `HTTPS` on in the request's server params, or `X-Forwarded-Proto: https` when
    `trust_proxy` is true; `RequestInfo::fromRequest()` decides, from the PSR-7
    request. *(revised: Slim 4)*
-2. Refuse a company not in `$db_connections`.
+2. Refuse a company not in `$db_connections`. *(revised)* Refuse, first, a
+   company other than one this request has already opened (section 3.6).
 3. `current_user::login($company, $user, $password)`. FrontAccounting's own
    failed-login throttle (`login_delay`, `faillog.php`) and any `hook_authenticate`
-   extension apply unchanged.
+   extension apply unchanged. *(revised)* FrontAccounting only counts failures and
+   greys out its login button; it never refuses on the server. An API is scriptable,
+   so `login` refuses with the same `Unauthenticated` message, before checking the
+   password, while `check_faillog()` says the caller is throttled. Entering a session
+   from a token neither reads nor writes `faillog.php`.
+
+   *(revised)* What that throttle keys on: `check_faillog()` runs before the login,
+   when `$_SESSION['wa_current_user']->user` is not yet anyone, and it looks up
+   `$login_faillog[<that user>][$_SERVER['REMOTE_ADDR']]` in the one
+   `tmp/faillog.php` the whole install shares. So it is a throttle **per remote
+   address, across all users and all companies**, and it is shared with the web
+   UI's login. Behind a reverse proxy every client has the proxy's address, so
+   `login_max_attempts` failures from anyone lock every API and web login out for
+   `login_delay` seconds. `trust_proxy` does not change this: it only affects this
+   module's `RequestInfo`, never the `REMOTE_ADDR` FrontAccounting keys on. The
+   lockout risk is accepted; the README says so for proxied deployments.
 4. On failure throw `Unauthenticated` with one message for every cause — unknown
    user, wrong password, inactive.
 5. Require `SA_GRAPHQL`, else `Forbidden`.
@@ -333,9 +398,18 @@ finds no row.
 3. **Reuse detection.** If the row is already revoked, revoke every live token of
    that user and throw `Unauthenticated`. A rotated token presented twice means it
    was copied.
-4. Load the user by id; refuse if missing or inactive.
+4. Load the user by id; refuse if missing or inactive. *(revised)* This runs
+   before anything is written: `RefreshTokenService::rotate()` takes an `$admit`
+   callback that it calls with the row's user id after steps 2 and 3 and before
+   step 5. `tokenRefresh`'s callback loads `UserModel` and enters the session
+   (section 2.2), so a missing, deactivated or no-longer-authorised user is
+   refused with the token neither used up nor succeeded.
 5. In one transaction: insert the new row, set `revoked_at` and `replaced_by` on the
-   old one.
+   old one. *(revised)* The revoke is conditional — `UPDATE ... WHERE id = ? AND
+   revoked_at IS NULL` — and `markRevoked()` returns whether it changed a row. When
+   it changed none, another request rotated the token first: roll back and treat it
+   as reuse (step 3). Checking step 3 alone, outside the transaction, lets two
+   concurrent uses of one token both succeed.
 6. Return a new pair.
 
 Rows past `expires_at` are deleted opportunistically on `login`, at most 100 per
@@ -369,19 +443,46 @@ with HTTP 500 and a JSON error naming the problem. There is no default secret. A
 rather than a `sys_prefs` row, so that a database dump does not contain the key that
 mints tokens.
 
-### 3.6 Multi-company
+### 3.6 Multi-company *(revised: one company per request)*
 
 The company is fixed at `login` and carried in `coy`. The connection and table
 prefix always come from the claim, never from a request argument or header, so a
 token for company 0 cannot reach company 1.
+
+**One company per request.** Mutation fields run one after another in one request
+and share one container, and the container's `\PDO` is built for whichever company
+is open when it is first needed. So a request opens at most one company:
+
+- `FaSession::openCompany()` — which `enter()`, `loginWithPassword()` and
+  `tokenRefresh` all go through — refuses any company other than the one already
+  open in this request, before looking at it, with `Unauthenticated` ("One company
+  per request: send a request for each company."). Re-opening the same company is
+  allowed. `Unauthenticated` rather than `BadInput` keeps the single-message rules:
+  `tokenRefresh` already turns every `Unauthenticated` from opening its company
+  into its one message, "The refresh token is not valid." (section 3.4), and for
+  `login` the refusal is decided before any company, user or password is looked
+  at, so it says nothing about credentials (section 3.2, step 4).
+- The container's `\PDO` is a `CompanyPdo`: it remembers the company it was
+  built for, and `prepare()`, `query()`, `exec()` and `beginTransaction()` throw a
+  `LogicException` (INTERNAL) when `CompanyContext::company()` is not that company
+  or no company is set. It fails closed. `Connection::current()` returns the same
+  object, so models built without a PDO are covered too.
+
+Checkpoint D found this reachable without it: a request carrying a company-0 bearer
+token and the fields `tokenRevoke` then `tokenRefresh("1.<company-0 secret>")` was
+issued a company-1 token when the two companies' databases shared a prefix.
+`OneCompanyPerRequestTest` reproduces that shape and the `login` variants.
 
 ## 4. Container and database
 
 ### 4.1 Container
 
 `container.php` returns a `DI\Container` built with `ContainerBuilder`, one per
-request, autowiring on. Explicit definitions: `Config`, `\PDO`, `TokenService`,
-`RefreshTokenRepository`, `Clock`. `ApiSchema` takes the container and resolves Types
+request, autowiring on. Explicit definitions *(revised)*: `Config`, `RequestInfo`,
+`Clock`, `ErrorFormatter`, `JsonErrorMiddleware`, `BodyLimitMiddleware`,
+`Schema` (→ `ApiSchema`), `SessionGate` (→ `FaSession`), `RefreshTokenRepository`
+(→ `AnormRefreshTokenRepository`) and `\PDO` (a `CompanyPdo`, section 3.6).
+Everything else, `TokenService` included, is autowired. `ApiSchema` takes the container and resolves Types
 through a private `type(string $class)` helper that returns
 `$this->context->get($class)` — the shape anorm-graphql's scaffolder produces and its
 editor expects. Query and Mutation entries are alphabetical. *(revised:
@@ -425,6 +526,13 @@ uncommitted rows. The rule, for this and every later release:
 
 In this release the only writes are refresh tokens, through Anorm.
 
+*(revised)* The one `db_query` in `src` is `src/Fa/fa_errors_compat.php`'s
+`db_query('rollback')` on FrontAccounting's own connection, when FrontAccounting
+reports a database error (section 2.1). It is what FrontAccounting's own error
+path does, it writes nothing, and it touches only the mysqli side, so the rule
+above holds: no mutation writes through both sides. `grep -rn
+"db_query\|begin_transaction" src` should find only it (and comments).
+
 ### 4.4 Models
 
 `src/Model` and `src/Auth/Model` *(revised)*. Conventions, binding on Release 2's
@@ -439,6 +547,16 @@ generated and renamed models as well:
 - camelCase domain property names, with declared types; PHP defaults for
   `NOT NULL DEFAULT` columns, because Anorm inserts every property; transformers for
   dates and booleans.
+
+  *(revised)* "Declared types" are `@var` docblock types, as `anorm make` drafts
+  them and `SalesTypeModel` has them, not PHP typed properties. Booleans: all three
+  models conform (`UserModel::$inactive` is a `bool` through `BooleanTransform`).
+  Dates: `RefreshTokenModel`'s three datetimes stay `Y-m-d H:i:s` strings, because
+  its columns hold UTC and Anorm's `SqlDateTimeTransform` reads and writes in PHP's
+  default timezone, which FrontAccounting sets from its own configuration. Its one
+  reader, `AnormRefreshTokenRepository`, converts them to and from
+  `RefreshTokenRecord`'s `DateTimeImmutable`s with an explicit UTC zone. A model
+  that becomes API surface uses a transformer for its dates.
 - `$mapper->modelPrimaryKey` set where the key is not `id`.
 - Static mode only. No `MODE_DYNAMIC`.
 
@@ -635,12 +753,14 @@ src/
     VerifiedIdentity.php
     FaMessages.php
     FaErrorException.php
+    fa_errors_compat.php      FrontAccounting's errors.inc functions, replaced (section 2.1)
     CompanyContext.php
   Auth/
     Authenticator.php         PSR-7 request -> Claims | null; throws InvalidToken (-> 401)
     Claims.php                company, login, jti, expiresAt
     TokenService.php          issueAccess(), verify(); lcobucci/jwt
     RefreshTokenRepository.php  interface
+    RefreshTokenRecord.php    a row as the service sees it: DateTimeImmutable, UTC
     InMemoryRefreshTokenRepository.php
     AnormRefreshTokenRepository.php
     RefreshTokenService.php   issue(), rotate(), revoke(), revokeAll(), purgeExpired()
@@ -650,6 +770,7 @@ src/
       UserModel.php           not scanned by the generator
   Db/
     Connection.php            the PDO a model falls back to when constructed without one
+    CompanyPdo.php            the container's \PDO; refuses another company (section 3.6)
   Error/
     ApiError.php  Unauthenticated.php  Forbidden.php  BadInput.php  NotFound.php
     FaRejected.php  InvalidToken.php  ErrorFormatter.php
@@ -686,7 +807,7 @@ Test-first throughout.
 | Suite | Needs | Covers |
 |---|---|---|
 | `unit` | nothing | `TokenService`: round trip, expiry, `nbf`, tampered signature, wrong issuer, wrong algorithm, missing claims. `RefreshTokenService` against an in-memory repository and a fixed `Clock`: issue, rotate, expiry, revoke one, revoke all, **reuse of a rotated token revokes the chain**, `<coy>.<secret>` parsing. `Config`: every fail-closed rule. `CompanyContext` defaults and `reset()`. `Guard::requireFor` deny-by-default. `ErrorFormatter`: each code, `INTERNAL` masking, `debug`. *(revised: Slim 4)* `BodyLimitMiddleware`: 413 by header and by real size. `AuthenticationMiddleware`: no header -> `null` claims; bad token -> `InvalidToken`. `FaSessionMiddleware` with a fake `SessionGate`: boots always, enters only with claims, gate exceptions propagate. `GraphQLAction`: 400 for a bad body and a batch, depth limit, `ErrorFormatter` applied. `JsonErrorMiddleware`: each exception -> its status and code, `INTERNAL` masking, `debug`. **`ApplicationTestCase`**, as in the panel: the real `app.php` over a test container with a fake `SessionGate`, driven by `$app->handle($request)` — 404, 405, middleware order (401 before 400), `apiVersion`. *(revised: anorm-graphql)* `FaModelType`: a verb without an area is `Forbidden`. |
-| `integration` | database; FrontAccounting loaded in-process | `Bootstrap` loads FrontAccounting with no output and no headers. `FaSession::enter`: a verified claim yields a logged-in `wa_current_user` with the role's areas; a deactivated user is refused; a user without `SA_GRAPHQL` is `Forbidden`; an unknown company is refused. **`hooks_graphql::authenticate` returns `null` when `VerifiedIdentity` is unset, set for another login, or set for another company; the flag is cleared after `enter()` whether it succeeds or throws.** A wrong password still fails through `login`. A FrontAccounting `E_USER_ERROR` becomes `FaErrorException`. `AnormRefreshTokenRepository` round trip. With `sgw_sales` active, a verified identity still logs in. *(revised: anorm-graphql)* The generated tests in `tests/Generated` (`SalesTypeTypeTest`), logged in as `apitest`. |
+| `integration` | database; FrontAccounting loaded in-process | `Bootstrap` loads FrontAccounting with no output and no headers. `FaSession::enter`: a verified claim yields a logged-in `wa_current_user` with the role's areas; a deactivated user is refused; a user without `SA_GRAPHQL` is `Forbidden`; an unknown company is refused. **`hooks_graphql::authenticate` returns `null` when `VerifiedIdentity` is unset, set for another login, or set for another company; the flag is cleared after `enter()` whether it succeeds or throws.** A wrong password still fails through `login`. A FrontAccounting `E_USER_ERROR` becomes `FaErrorException`. `AnormRefreshTokenRepository` round trip. With `sgw_sales` active, a verified identity still logs in. *(revised: anorm-graphql)* The generated tests in `tests/Generated` (`SalesTypeTypeTest`), logged in as `apitest`. *(revised: one company per request)* `OneCompanyPerRequestTest`, with a second company (`SecondCompany`: company 0's database under the same prefix, served in-process by overlaying `config_db.php`; nothing on disk changes): a bearer session followed by `tokenRefresh("1.<company-0 secret>")`, or by `login(company: 1)`, and a second `login` for another company, are refused with no token issued or rotated; `FaSession` refuses a second company and re-opens the same one; `CompanyPdo` refuses every statement once `CompanyContext` names another company. `tokenRefresh` for a deactivated or deleted user is refused and the token is not rotated. |
 | `http` | Apache | `login` -> `me` -> `tokenRefresh` -> the old refresh token is rejected and the chain is revoked -> `login` again -> `tokenRevoke`. `noapi` user: `FORBIDDEN`. No token: `UNAUTHENTICATED` on `me`, success on `apiVersion`. Expired and tampered tokens: 401. A token for a company that does not exist: 401. *(revised)* GET: 405; an unknown path under the module: 404 — proving `.htaccess` and the base path in the real vhost. `salesTypeList`: `apitest` lists; `noapi` `FORBIDDEN`; no token `UNAUTHENTICATED`. Every response parses as JSON. |
 
 Integration tests that load FrontAccounting run with

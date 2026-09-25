@@ -75,8 +75,11 @@ export MARIADB_VERSION="${MARIADB_VERSION:-10.11}"
 export INSTALL_XDEBUG="${INSTALL_XDEBUG:-true}"
 export XDEBUG_MODE="${XDEBUG_MODE:-off}"
 
-export FA_REPO="${FA_REPO:-https://github.com/FrontAccountingERP/FA.git}"
-export FA_REF="${FA_REF:-master}"
+export FA_REPO="${FA_REPO:-https://github.com/cambell-prince/frontaccounting.git}"
+export FA_REF="${FA_REF:-master-cp}"
+export SGW_SALES_REPO="${SGW_SALES_REPO:-https://github.com/saygoweb/frontaccounting-module-sgw_sales.git}"
+export SGW_SALES_REF="${SGW_SALES_REF:-master}"
+export SGW_SALES_ACTIVE="${SGW_SALES_ACTIVE:-true}"
 
 # FA calls xdebug_call_file() on every query when $go_debug is on, and xdebug 3
 # only provides that function in "develop" mode — see docker-entrypoint.sh. So
@@ -137,15 +140,19 @@ warn() {
     printf '\033[33m==>\033[0m %s\n' "$*" >&2
 }
 
-# A checkout of saygoweb/anorm-graphql on the host, mounted read-only at
-# /opt/anorm-graphql for a composer `path` repository. Only when asked for:
-# compose has no conditional volumes, so it is a second file.
-PACKAGES_FILE="$DOCKER_DIR/docker-compose.packages.yml"
+# A checkout of saygoweb/anorm-graphql, or of sgw_sales, on the host, mounted
+# over what the image otherwise supplies. Only when asked for: compose has no
+# conditional volumes, so each is a second file.
 COMPOSE_FILES=(-f "$COMPOSE_FILE")
 if [ -n "${ANORM_GRAPHQL_PATH:-}" ]; then
     [ -d "$ANORM_GRAPHQL_PATH" ] || die "ANORM_GRAPHQL_PATH=$ANORM_GRAPHQL_PATH is not a directory"
     export ANORM_GRAPHQL_PATH
-    COMPOSE_FILES+=(-f "$PACKAGES_FILE")
+    COMPOSE_FILES+=(-f "$DOCKER_DIR/docker-compose.anorm-graphql.yml")
+fi
+if [ -n "${SGW_SALES_PATH:-}" ]; then
+    [ -d "$SGW_SALES_PATH" ] || die "SGW_SALES_PATH=$SGW_SALES_PATH is not a directory"
+    export SGW_SALES_PATH
+    COMPOSE_FILES+=(-f "$DOCKER_DIR/docker-compose.sgw-sales.yml")
 fi
 
 compose() {
@@ -333,6 +340,8 @@ Run 'docker/fa-graphql init' to write docker/.env with free ports, or set it you
         info "skipping the database seed (--no-seed)"
     elif db_seeded; then
         info "database '$DB_NAME' already holds a FrontAccounting schema — leaving it alone"
+        # Idempotent, so an existing volume picks up new extension SQL or seed rows.
+        db_post_load
     else
         db_load "$SEED"
     fi
@@ -371,6 +380,43 @@ prefix_filter() {
     fi
 }
 
+# Extension SQL is written for the UI's activate step, with trailing
+# "# Upgrade helpers" scratch queries that are not meant to be run.
+ext_sql_filter() {
+    sed '/^# Upgrade helpers/,$d' | prefix_filter
+}
+
+db_has_table() {
+    local n
+    n="$(db_mysql -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$DB_NAME' AND table_name='$1'")"
+    [ "${n:-0}" -gt 0 ]
+}
+
+# What a dataset does not carry: the tables of the active extensions, and the
+# users the suite logs in as. Idempotent, so `db load` can be repeated.
+#
+# sgw_sales' update_1.0.sql (CREATE TABLE IF NOT EXISTS, ALTER TABLE … MODIFY)
+# and update_1.4.sql (ALTER TABLE … CHANGE, and a single DROP+ADD INDEX
+# statement) turn out to be idempotent as written when tested by hand — but that
+# block is still guarded on the table not existing yet, both as a cheap skip on
+# every later `db load` and belt-and-braces should a future update_*.sql not be.
+db_post_load() {
+    local f
+    for f in "$PROJECT_ROOT"/sql/update_*.sql; do
+        [ -f "$f" ] || continue
+        info "applying $(basename "$f") (graphql)"
+        ext_sql_filter < "$f" | db_mysql "$DB_NAME"
+    done
+    if [ "$SGW_SALES_ACTIVE" = "true" ] && ! db_has_table "${DB_PREFIX}sales_recurring"; then
+        for f in update_1.0.sql update_1.4.sql; do
+            info "applying $f (sgw_sales)"
+            c_exec cat "$FA_DIR/modules/sgw_sales/sql/$f" | ext_sql_filter | db_mysql "$DB_NAME"
+        done
+    fi
+    info "applying tests/data/seed.sql"
+    prefix_filter < "$PROJECT_ROOT/tests/data/seed.sql" | db_mysql "$DB_NAME"
+}
+
 db_load() {
     local which="$1" src='' in_image=''
     ensure_running
@@ -406,6 +452,8 @@ db_load() {
             prefix_filter < "$src" | db_mysql "$DB_NAME"
         fi
     fi
+
+    db_post_load
 
     case "$which" in
         new|demo) info "loaded — login: admin / password (FrontAccounting defaults)" ;;
@@ -566,8 +614,12 @@ cmd_info() {
 
   FA source     $FA_REPO @ $FA_REF
                 $fa_commit
+  sgw_sales     $SGW_SALES_REF (active: $SGW_SALES_ACTIVE)
   Database      $DB_NAME as $DB_USER, tables prefixed '$DB_PREFIX'
                 from the host: mysql -h 127.0.0.1 -P ${DB_PORT} -u $DB_USER -p$DB_PASSWORD $DB_NAME
+
+  Logins        apitest / password (GraphQL API role, SA_GRAPHQL + SA_SALESTYPES)
+                noapi / password   (System Administrator, no SA_GRAPHQL)
 
   This checkout $PROJECT_ROOT -> $APP_DIR
 
@@ -649,6 +701,13 @@ How it fits together
 
   ANORM_GRAPHQL_PATH, when set, mounts a host checkout of saygoweb/anorm-graphql
   read-only at /opt/anorm-graphql for a composer `path` repository.
+
+  sgw_sales (SGW_SALES_REPO/SGW_SALES_REF, master by default) is cloned into
+  /var/www/html/modules/sgw_sales at build time, the way FrontAccounting itself
+  is. SGW_SALES_ACTIVE=true (the default) registers it as extension 2 and applies
+  its sql/update_1.0.sql and update_1.4.sql on `db load`; false leaves it cloned
+  but unregistered. SGW_SALES_PATH, like ANORM_GRAPHQL_PATH, bind-mounts a host
+  checkout over the clone in the image, for working on both repositories at once.
 
   Settings live in docker/.env (gitignored); docker/.env.example lists them all.
 

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Generates GraphQL Types, their tests and the ApiSchema.php entries from the models
+# in src/Model, with anorm-graphql. Runs on the host with the host's php: the
+# generator builds each model on a NullPdo and needs no database and no container.
+#
+#   bin/generate                   generate
+#   bin/generate --dry-run         show what would change; write nothing
+#   bin/generate --only SalesType  one entity
+#
+# Only models meant to be API surface live in src/Model. Models that must never be
+# exposed (refresh tokens, users) live in src/Auth/Model, which this never scans.
+#
+# Co-developing anorm-graphql: ANORM_GRAPHQL_CHECKOUT=/path/to/anorm-graphql
+# bin/generate runs that checkout's generator instead of vendor/'s. This module's
+# autoloader is prepended, because the generator require()s our models and they use
+# FA\GraphQL classes; without it every model is skipped as unloadable.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+# Entities generated without an Input or mutations, comma-separated.
+READONLY="SalesType"
+
+if [ -n "${ANORM_GRAPHQL_CHECKOUT:-}" ]; then
+    GENERATOR=(php -d "auto_prepend_file=$ROOT/vendor/autoload.php" "$ANORM_GRAPHQL_CHECKOUT/bin/anorm-graphql.php")
+else
+    GENERATOR=(php "$ROOT/vendor/bin/anorm-graphql.php")
+fi
+
+ARGS=(make
+    -m src/Model -n 'FA\GraphQL\Model'
+    -o src/Type -t 'FA\GraphQL\Type'
+    --tests tests/Generated --test-ns 'FA\GraphQL\Tests\Generated'
+    -s src/ApiSchema.php --schema-ns 'FA\GraphQL'
+    --type-base 'FA\GraphQL\Type\FaModelType')
+# --readonly naming a model that does not exist is an error (exit 2), so it is passed
+# only when there is something to name.
+if [ -n "$READONLY" ]; then
+    ARGS+=(--readonly "$READONLY")
+fi
+
+exec "${GENERATOR[@]}" "${ARGS[@]}" "$@"
