@@ -82,9 +82,12 @@ must design for:
   `new_doc_date()`, the fork with `Today()`. Generate-and-send sets the document
   date explicitly rather than rely on either.
 - `reporting/rep107.php`: upstream sets `$path_to_root = ".."`, which resolves
-  against the working directory, so including it from a module breaks. Emailing an
-  invoice needs the working directory switched to `reporting/` for the include, or
-  the approach `sgw_sales`' generation service already takes.
+  against the working directory, and on both upstream and the fork it includes
+  `includes/session.inc`, which the API can never include (on upstream its
+  unguarded functions would also redeclare `fa_session_compat.php`'s, a fatal
+  error). Emailing an invoice cannot include `rep107.php`: it needs the report run
+  another way (a sub-request or CLI process, or the approach `sgw_sales`'
+  generation service takes), decided in Release 2's spec.
 
 ### Non-goals
 
@@ -301,21 +304,24 @@ executes: `AuthenticationMiddleware` throws `InvalidToken`. *(revised: Slim 4)*
 FrontAccounting prints: HTML error boxes, notices, `die()` messages, report output.
 None of it may reach an API client, whichever code printed it.
 
-`src/Http/OutputCapture` is started on the first line of `index.php` that runs
-code, before the request, the configuration or the container exist. It opens an
-output buffer and registers a shutdown function.
+`src/Http/OutputCapture` is started in `index.php` immediately after
+`vendor/autoload.php` is required, before the request, the configuration or the
+container exist. It opens an output buffer and registers a shutdown function.
 
 - **Normal path.** After `$app->handle()`, `index.php` ends the capture: every
   buffer above its own level is emptied, whatever was captured is logged
   (truncated to 2 KB, with its length) to the log `Bootstrap` configured, and never
-  sent. Then Slim's emitter sends the response.
+  sent. Headers FrontAccounting set with `header()` (a `401` from `login_fail()`, an
+  output handler's `Content-Type`) are removed with `header_remove()`. Then Slim's
+  emitter sends the response, and `afterEmit()` opens a discarding buffer so output
+  from a later shutdown function is not appended to the body.
 - **`exit`, `die`, or a PHP fatal error** anywhere after the capture started ends
   the request before Slim can respond. The shutdown function sees that the capture
   was not ended, discards every buffer, logs the captured output and
   `error_get_last()`, and, because nothing has been sent, answers
   `500 {"errors":[{"message":"Internal server error","extensions":{"code":"INTERNAL"}}]}`
-  with `Content-Type: application/json`. Open transactions on both connections roll
-  back as the process ends.
+  with `Content-Type: application/json`, after `header_remove()`. Open transactions
+  on both connections roll back as the process ends.
 
 `Bootstrap`'s own clean-up of buffers its includes leave open stays: it keeps
 FrontAccounting's output handlers (`output_html`, `Ajax`) from wrapping the rest of
