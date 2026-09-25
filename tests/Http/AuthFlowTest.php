@@ -124,7 +124,7 @@ class AuthFlowTest extends TestCase
 
     /**
      * FrontAccounting's login form needs a CSRF `_token`, and `preventHijacking()`
-     * (includes/session_utils.inc) resets the session — silently discarding that
+     * (includes/session.inc; session_utils.inc in the fork) resets the session — silently discarding that
      * token — the moment the User-Agent on the POST differs from the one that
      * fetched the form. So the form is fetched and posted with the same
      * User-Agent and the same session cookie, and a positive control (the right

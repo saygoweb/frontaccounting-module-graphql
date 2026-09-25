@@ -29,6 +29,12 @@
  *    tmp/errors.log, which Bootstrap points error_log at) before the rollback, so
  *    a thrown FaErrorException never leaves a transaction open and never loses
  *    its cause.
+ *
+ * Mirrors FrontAccounting 2.4.20's includes/errors.inc (upstream master 9464a3ff;
+ * the fork's differs by one comment). It stays in the module for good: the module
+ * runs on an unmodified upstream core. tests/Unit/Fa/CompatDriftTest checks that
+ * every function errors.inc defines, except error_handler() (only ever called from
+ * inside errors.inc), is defined here.
  */
 
 use FA\GraphQL\Fa\FaErrorException;

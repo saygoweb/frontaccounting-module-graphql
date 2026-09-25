@@ -14,9 +14,19 @@ class StackTest extends TestCase
         return dirname(__DIR__, 2);
     }
 
-    public function testFrontAccountingIsTheForkWithSessionUtils(): void
+    public function testFrontAccountingIsInPlaceWithItsSessionUtilities(): void
     {
-        $this->assertFileExists($this->moduleDir() . '/../../includes/session_utils.inc');
+        $root = $this->moduleDir() . '/../..';
+        $this->assertFileExists($root . '/includes/current_user.inc');
+        // The fork keeps these functions in includes/session_utils.inc, upstream
+        // inside includes/session.inc; Bootstrap loads the fork's file or its copy.
+        $this->assertTrue(
+            is_file($root . '/includes/session_utils.inc')
+            || strpos(
+                (string) file_get_contents($root . '/includes/session.inc'),
+                'function write_login_filelog('
+            ) !== false
+        );
     }
 
     public function testSgwSalesIsInstalledWithItsVendor(): void

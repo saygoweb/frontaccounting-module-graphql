@@ -31,8 +31,8 @@ class OneCompanyPerRequestTest extends ApplicationTestCase
     protected function setUp(): void
     {
         $root = Bootstrap::defaultRoot();
-        if (!is_file($root . '/config_db.php') || !is_file($root . '/includes/session_utils.inc')) {
-            $this->markTestSkipped('No FrontAccounting fork here; run in the docker stack.');
+        if (!is_file($root . '/config_db.php')) {
+            $this->markTestSkipped('No FrontAccounting here; run in the docker stack.');
         }
         parent::setUp();
         Bootstrap::boot($root);
