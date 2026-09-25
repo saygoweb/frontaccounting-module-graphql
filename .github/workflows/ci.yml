@@ -1,8 +1,9 @@
 name: CI
 
+# Push only: a branch with an open pull request is tested by its pushes, so
+# pull_request would run every job a second time.
 on:
   push:
-  pull_request:
 
 jobs:
   test:
