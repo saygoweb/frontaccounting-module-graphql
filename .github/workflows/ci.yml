@@ -6,14 +6,24 @@ on:
 
 jobs:
   test:
+    name: FA ${{ matrix.fa.name }} / PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         php: ['7.4', '8.3']
+        fa:
+          - name: upstream
+            repo: https://github.com/FrontAccountingERP/FA.git
+            ref: master
+          - name: fork
+            repo: https://github.com/cambell-prince/frontaccounting.git
+            ref: master-cp
     env:
       PHP_VERSION: ${{ matrix.php }}
-      COMPOSE_PROJECT_NAME: fa-graphql-ci-${{ matrix.php }}
+      FA_REPO: ${{ matrix.fa.repo }}
+      FA_REF: ${{ matrix.fa.ref }}
+      COMPOSE_PROJECT_NAME: fa-graphql-ci-${{ matrix.fa.name }}-${{ matrix.php }}
     steps:
       - uses: actions/checkout@v4
       - name: Build, boot, lint, analyze, test

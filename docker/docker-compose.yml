@@ -13,8 +13,8 @@ services:
         INSTALL_XDEBUG: "${INSTALL_XDEBUG:-true}"
         USER_UID: "${USER_UID:-1000}"
         USER_GID: "${USER_GID:-1000}"
-        FA_REPO: "${FA_REPO:-https://github.com/cambell-prince/frontaccounting.git}"
-        FA_REF: "${FA_REF:-master-cp}"
+        FA_REPO: "${FA_REPO:-https://github.com/FrontAccountingERP/FA.git}"
+        FA_REF: "${FA_REF:-master}"
         SGW_SALES_REPO: "${SGW_SALES_REPO:-https://github.com/saygoweb/frontaccounting-module-sgw_sales.git}"
         SGW_SALES_REF: "${SGW_SALES_REF:-master}"
     restart: unless-stopped

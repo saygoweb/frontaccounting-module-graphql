@@ -69,15 +69,17 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # FrontAccounting itself
 # ---------------------------------------------------------------------------
 #
-# The fork is required, not just a default: it carries includes/session_utils.inc,
-# which FaSession needs to enter a verified login without FA's own password check.
-# Point FA_REPO/FA_REF elsewhere only to test against a different fork or tag; a
-# shallow clone needs a branch or tag name, a bare commit sha will not work.
+# Upstream FrontAccounting master by default: the module runs on an unmodified
+# core. The cambell-prince fork is supported too, and CI builds both:
+#
+#   FA_REPO=https://github.com/cambell-prince/frontaccounting.git FA_REF=master-cp
+#
+# A shallow clone needs a branch or tag name; a bare commit sha will not work.
 #
 # Changing either needs `fa-graphql up --build`; the clone is a build step, so a
 # running container keeps the tree it was built with.
-ARG FA_REPO=https://github.com/cambell-prince/frontaccounting.git
-ARG FA_REF=master-cp
+ARG FA_REPO=https://github.com/FrontAccountingERP/FA.git
+ARG FA_REF=master
 RUN set -eux; \
     rm -rf /var/www/html; \
     git clone --depth 1 --branch "${FA_REF}" "${FA_REPO}" /var/www/html; \

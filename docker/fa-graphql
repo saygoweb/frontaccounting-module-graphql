@@ -75,8 +75,8 @@ export MARIADB_VERSION="${MARIADB_VERSION:-10.11}"
 export INSTALL_XDEBUG="${INSTALL_XDEBUG:-true}"
 export XDEBUG_MODE="${XDEBUG_MODE:-off}"
 
-export FA_REPO="${FA_REPO:-https://github.com/cambell-prince/frontaccounting.git}"
-export FA_REF="${FA_REF:-master-cp}"
+export FA_REPO="${FA_REPO:-https://github.com/FrontAccountingERP/FA.git}"
+export FA_REF="${FA_REF:-master}"
 export SGW_SALES_REPO="${SGW_SALES_REPO:-https://github.com/saygoweb/frontaccounting-module-sgw_sales.git}"
 export SGW_SALES_REF="${SGW_SALES_REF:-master}"
 export SGW_SALES_ACTIVE="${SGW_SALES_ACTIVE:-true}"
@@ -690,6 +690,8 @@ How it fits together
   application the module plugs into. So the image clones it (FA_REPO/FA_REF,
   upstream master by default) to /var/www/html, and this checkout is
   bind-mounted at /var/www/html/modules/graphql. Edits are live on the next request.
+  FA_REPO=https://github.com/cambell-prince/frontaccounting.git FA_REF=master-cp
+  builds the fork instead (up --build); CI builds both.
 
   Apache listens on 8000 inside the container, where tests/Http reaches it;
   phpunit runs in there with it. On the host it is HTTP_PORT, 8100 by default.
