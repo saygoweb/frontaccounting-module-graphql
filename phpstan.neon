@@ -13,6 +13,13 @@ parameters:
         - container.php
         - index.php
 
+    # FrontAccounting's own code, byte for byte (it still calls
+    # get_magic_quotes_gpc() behind a PHP < 5.4 check). FrontAccounting is
+    # scanned for symbols, never analysed; this copy of it is no different.
+    excludePaths:
+        analyse:
+            - src/Fa/fa_session_compat.php
+
     # FrontAccounting itself, two directories up: this module lives at
     # modules/graphql inside an FA tree, and that is equally true inside the
     # docker stack, where the checkout is bind-mounted at

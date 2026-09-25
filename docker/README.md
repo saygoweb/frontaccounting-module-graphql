@@ -22,7 +22,7 @@ this one.
 
 | | |
 | --- | --- |
-| FrontAccounting | cloned into the image at build time from `FA_REPO` / `FA_REF` — [`cambell-prince/frontaccounting`](https://github.com/cambell-prince/frontaccounting) `@ master-cp` by default, **required**: it carries `includes/session_utils.inc`, which `FaSession` needs to enter a verified login without FA's own password check |
+| FrontAccounting | cloned into the image at build time from `FA_REPO` / `FA_REF` — upstream [`FrontAccountingERP/FA`](https://github.com/FrontAccountingERP/FA) `@ master` by default. The [`cambell-prince/frontaccounting`](https://github.com/cambell-prince/frontaccounting) fork (`master-cp`) works too; CI builds both |
 | `sgw_sales` | cloned into `/var/www/html/modules/sgw_sales` from `SGW_SALES_REPO` / `SGW_SALES_REF` (`master` by default) the same way, with `composer install --no-dev` run in it; `SGW_SALES_ACTIVE` (default `true`) registers it as extension 2 |
 | this checkout | bind-mounted at `/var/www/html/modules/graphql`, so an edit is live on the next request |
 | `config.php`, `config_db.php`, `lang/installed_languages.inc` | written by the entrypoint, into the image's FA tree |

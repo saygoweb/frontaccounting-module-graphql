@@ -32,6 +32,10 @@ use FA\GraphQL\ConfigException;
  *    so including it would have been harmless, not wrong — left out on scope alone.
  *  - includes/references.inc is not in the include list: includes/main.inc already
  *    include_once's it, so listing it again would have been a no-op.
+ *  - includes/session_utils.inc exists only in the cambell-prince fork; upstream
+ *    FrontAccounting keeps those functions inside session.inc, which cannot be
+ *    included. loadSessionUtilities() takes the fork's file when it is there and
+ *    the module's own copy (fa_session_compat.php) otherwise.
  *  - $GLOBALS['SysPrefs']->go_debug is left at whatever config.php sets (0 in the
  *    docker stack). It turned out not to matter: check_db_error()'s exit path was
  *    never go_debug-gated in the first place (see installFaCompat()).
@@ -40,12 +44,11 @@ final class Bootstrap
 {
     /**
      * In FrontAccounting's own order (includes/session.inc), minus errors.inc
-     * (replaced by installFaCompat()) and app_entries.inc (not needed yet — see the
-     * class docblock). session_utils.inc exists only in the cambell-prince fork;
-     * upstream keeps those functions in session.inc.
+     * (replaced by installFaCompat()), session_utils.inc (loaded first by
+     * loadSessionUtilities(): the fork has it, upstream does not) and
+     * app_entries.inc (not needed — see the class docblock).
      */
     private const INCLUDES = [
-        'includes/session_utils.inc',
         'includes/current_user.inc',
         'frontaccounting.php',
         'admin/db/security_db.inc',
@@ -87,12 +90,6 @@ final class Bootstrap
             // No path in the message: JsonErrorMiddleware shows it to the client.
             throw new ConfigException(
                 'fa_root does not name a FrontAccounting install (set it in config_graphql.php).'
-            );
-        }
-        if (!is_file($root . '/includes/session_utils.inc')) {
-            throw new ConfigException(
-                'This FrontAccounting has no includes/session_utils.inc. The GraphQL module needs the '
-                . 'cambell-prince/frontaccounting fork, which separates those functions from session.inc.'
             );
         }
     }
@@ -173,6 +170,8 @@ final class Bootstrap
 
     private static function load(string $root): void
     {
+        self::loadSessionUtilities($root);
+
         foreach (self::INCLUDES as $file) {
             self::includeGlobal($root . '/' . $file);
             if ($file === 'config.php') {
@@ -226,6 +225,23 @@ final class Bootstrap
         if (!isset($_SESSION['wa_current_user'])) {
             $_SESSION['wa_current_user'] = new \current_user();
         }
+    }
+
+    /**
+     * The functions session.inc defines besides the session itself
+     * (html_specials_encode, write_login_filelog, check_faillog, ...). The fork
+     * keeps them in includes/session_utils.inc; upstream only inside session.inc,
+     * so for upstream the module brings its own copy, as modules/api does.
+     */
+    private static function loadSessionUtilities(string $root): void
+    {
+        $fork = $root . '/includes/session_utils.inc';
+        if (is_file($fork)) {
+            self::includeGlobal($fork);
+
+            return;
+        }
+        require_once __DIR__ . '/fa_session_compat.php';
     }
 
     /**

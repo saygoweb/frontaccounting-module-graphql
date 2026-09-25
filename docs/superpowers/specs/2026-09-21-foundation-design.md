@@ -5,7 +5,9 @@ Status: approved design, pre-implementation. Revised 2026-09-21 after a boot spi
 in the container and news from the sgw_sales session; each revision is marked
 *(revised)*. Revised again 2026-09-25: the HTTP layer is Slim 4, marked
 *(revised: Slim 4)*, and `saygoweb/anorm-graphql` is used from this release on,
-marked *(revised: anorm-graphql)*.
+marked *(revised: anorm-graphql)*. Foundation 1.1 (2026-09-25): the module runs on
+upstream FrontAccounting `master`, the fork is optional, and the whole request's
+output is captured; marked *(revised: upstream FA)*.
 
 ## 1. Purpose
 
@@ -36,8 +38,10 @@ The work is split into three releases, each with its own spec and plan:
 - PHP `^7.4 || ^8.0`. `webonyx/graphql-php ^15.32.3`, no `simpod/graphql-utils`.
 - Authentication is a JWT granted on user authentication, with a short-lived access
   token and a revocable, rotating refresh token.
-- The stack targets the `cambell-prince/frontaccounting` fork at `master-cp`, with
-  `sgw_sales` present.
+- *(revised: upstream FA)* **The module runs on upstream FrontAccounting `master`**
+  (`FrontAccountingERP/FA`), with no core change required: getting the core changed
+  is hard. The `cambell-prince/frontaccounting` fork (`master-cp`) stays supported.
+  The stack defaults to upstream with `sgw_sales` present; CI runs both.
 - Discriminated tables (`sales_orders`, `debtor_trans`) are handled by anorm-graphql
   scopes (`ModelType::scope()`, already in `0.1`; a `--config` file later), not composite
   keys. Document-shaped writes are hand-written over FrontAccounting's functions.
@@ -68,6 +72,22 @@ The work is split into three releases, each with its own spec and plan:
 6. *(revised: anorm-graphql)* One entity, `SalesType`, read-only, travels the whole
    generated path: model, generated Type and tests, `ApiSchema` entry, `Guard`
    areas, and the `http` suite.
+
+### What Release 2 inherits from upstream compatibility *(revised: upstream FA)*
+
+The fork's other changes that the API will meet, and upstream's behaviour Release 2
+must design for:
+
+- `sales/includes/cart_class.inc`: upstream dates a child delivery or invoice with
+  `new_doc_date()`, the fork with `Today()`. Generate-and-send sets the document
+  date explicitly rather than rely on either.
+- `reporting/rep107.php`: upstream sets `$path_to_root = ".."`, which resolves
+  against the working directory, and on both upstream and the fork it includes
+  `includes/session.inc`, which the API can never include (on upstream its
+  unguarded functions would also redeclare `fa_session_compat.php`'s, a fatal
+  error). Emailing an invoice cannot include `rep107.php`: it needs the report run
+  another way (a sub-request or CLI process, or the approach `sgw_sales`'
+  generation service takes), decided in Release 2's spec.
 
 ### Non-goals
 
@@ -149,17 +169,17 @@ sends no headers.
 
 - `Bootstrap` must define `VARLIB_PATH` and `VARLOG_PATH` (`<fa_root>/tmp`) before
   including `config.php`; `session.inc` normally does.
-- It includes `includes/session_utils.inc` (`html_specials_encode`,
-  `write_login_filelog`, ...). **That file exists only in the
-  `cambell-prince/frontaccounting` fork**; upstream keeps those functions inside
-  `session.inc`, which cannot be included. Foundation therefore requires the fork
-  and fails closed with a message saying so when the file is absent. Supporting
-  upstream (by shipping a copy, as `modules/api` does) is out of scope.
-  *(revised)* The check runs inside the pipeline, so the `ConfigException` it
-  throws reaches `JsonErrorMiddleware`, which answers 500 `INTERNAL` with the
-  message `The GraphQL module is not configured: <reason>`, as `index.php` does for
-  a configuration failure before the app exists, rather than a bare
-  `Internal server error`.
+- *(revised: upstream FA)* **`session_utils`.** The functions `session.inc` defines
+  besides the session itself (`html_specials_encode`, `write_login_filelog`,
+  `check_faillog`, `cache_invalidate`, `login_fail`, `html_cleanup`, ...) live in
+  `includes/session_utils.inc` in the fork, and inside `session.inc` upstream, which
+  cannot be included. `Bootstrap` includes the fork's file when it exists and
+  otherwise `src/Fa/fa_session_compat.php`: the module's copy of those functions,
+  each behind `function_exists`, as `modules/api` ships its own `session_utils.inc`.
+  `SessionManager` is not copied: there is no PHP session. A root without
+  `config_db.php` or `includes/current_user.inc` is still refused: the
+  `ConfigException` reaches `JsonErrorMiddleware`, which answers 500 `INTERNAL` with
+  `The GraphQL module is not configured: <reason>`.
 - `TB_PREF` is the literal placeholder `&TB_PREF&`, substituted by `db_query()`.
   The real prefix is `$db_connections[$coy]['tbpref']`, which is what
   `CompanyContext` holds.
@@ -187,14 +207,11 @@ FrontAccounting files call by name (`fa_trigger_error`, `display_db_error`,
   `$exit_if_error = false` with a duplicate key returns.
 
 This is a hand-copied re-implementation and will drift from FrontAccounting's.
-**Recommendation: move the seam into the `cambell-prince/frontaccounting` fork
-before Release 2's first write**: split `errors.inc` into its logic and its
-`error_box`/`fmt_errors` rendering (as the fork already did for
-`session_utils.inc`), and have `check_db_error()` / `display_db_error()` throw a
-fork-defined exception instead of `end_page(); exit` when a flag such as
-`FA_ERRORS_THROW` is defined. The module already requires the fork, so this costs
-no compatibility, and FrontAccounting's friendly-error and rollback rules then live
-in one maintained place.
+*(revised: upstream FA)* It stays in the module for good: the module must run on an
+unmodified upstream core, so the seam cannot move into the fork. Both compat files
+name the FrontAccounting version they were copied from, and a test compares the
+list of functions they define with the FrontAccounting files they replace, so a
+function added upstream is noticed.
 
 *(revised)* **FrontAccounting does not see the HTTP request.** The API reads its
 request through PSR-7, built in `index.php` before the app runs. Before any include,
@@ -281,6 +298,34 @@ every other field throws `Unauthenticated`. This is enforced by `Guard`
 A header that is present but malformed, badly signed, from the wrong issuer or
 expired ends the request with HTTP 401 and a JSON error body before GraphQL
 executes: `AuthenticationMiddleware` throws `InvalidToken`. *(revised: Slim 4)*
+
+### 2.4 Output capture *(revised: upstream FA)*
+
+FrontAccounting prints: HTML error boxes, notices, `die()` messages, report output.
+None of it may reach an API client, whichever code printed it.
+
+`src/Http/OutputCapture` is started in `index.php` immediately after
+`vendor/autoload.php` is required, before the request, the configuration or the
+container exist. It opens an output buffer and registers a shutdown function.
+
+- **Normal path.** After `$app->handle()`, `index.php` ends the capture: every
+  buffer above its own level is emptied, whatever was captured is logged
+  (truncated to 2 KB, with its length) to the log `Bootstrap` configured, and never
+  sent. Headers FrontAccounting set with `header()` (a `401` from `login_fail()`, an
+  output handler's `Content-Type`) are removed with `header_remove()`. Then Slim's
+  emitter sends the response, and `afterEmit()` opens a discarding buffer so output
+  from a later shutdown function is not appended to the body.
+- **`exit`, `die`, or a PHP fatal error** anywhere after the capture started ends
+  the request before Slim can respond. The shutdown function sees that the capture
+  was not ended, discards every buffer, logs the captured output and
+  `error_get_last()`, and, because nothing has been sent, answers
+  `500 {"errors":[{"message":"Internal server error","extensions":{"code":"INTERNAL"}}]}`
+  with `Content-Type: application/json`, after `header_remove()`. Open transactions
+  on both connections roll back as the process ends.
+
+`Bootstrap`'s own clean-up of buffers its includes leave open stays: it keeps
+FrontAccounting's output handlers (`output_html`, `Ajax`) from wrapping the rest of
+the request.
 
 ## 3. Authentication
 
@@ -690,6 +735,7 @@ Every response body is JSON.
 | 405 | not POST; the response carries `Allow: POST` | Slim routing (`HttpMethodNotAllowedException`) |
 | 413 | body over `max_body_bytes`, by `Content-Length` or by its real size | `BodyLimitMiddleware` (`RequestRejected`) |
 | 500 | configuration fails closed; any unrecognised throwable (`INTERNAL`) | `index.php`; `JsonErrorMiddleware` |
+| 500 | *(revised: upstream FA)* `exit`, `die` or a PHP fatal error after the capture started (`INTERNAL`) | `OutputCapture`'s shutdown function (§2.4) |
 
 401 is outside GraphQL so a client can refresh and retry without parsing the body.
 Each `ApiError` declares the HTTP status it has when thrown outside GraphQL
@@ -747,6 +793,7 @@ src/
     GraphQLAction.php         body -> query/variables/operationName (400; batch refused);
                               QueryDepth/QueryComplexity; ApiSchema; ErrorFormatter
     RequestRejected.php       an HTTP status and a message (400, 413)
+    OutputCapture.php         whole-request output buffer; JSON 500 on exit/fatal (section 2.4)
   Fa/
     Bootstrap.php
     FaSession.php             implements SessionGate
@@ -754,6 +801,7 @@ src/
     FaMessages.php
     FaErrorException.php
     fa_errors_compat.php      FrontAccounting's errors.inc functions, replaced (section 2.1)
+    fa_session_compat.php     session_utils functions when FrontAccounting lacks the file (upstream)
     CompanyContext.php
   Auth/
     Authenticator.php         PSR-7 request -> Claims | null; throws InvalidToken (-> 401)
@@ -806,8 +854,8 @@ Test-first throughout.
 
 | Suite | Needs | Covers |
 |---|---|---|
-| `unit` | nothing | `TokenService`: round trip, expiry, `nbf`, tampered signature, wrong issuer, wrong algorithm, missing claims. `RefreshTokenService` against an in-memory repository and a fixed `Clock`: issue, rotate, expiry, revoke one, revoke all, **reuse of a rotated token revokes the chain**, `<coy>.<secret>` parsing. `Config`: every fail-closed rule. `CompanyContext` defaults and `reset()`. `Guard::requireFor` deny-by-default. `ErrorFormatter`: each code, `INTERNAL` masking, `debug`. *(revised: Slim 4)* `BodyLimitMiddleware`: 413 by header and by real size. `AuthenticationMiddleware`: no header -> `null` claims; bad token -> `InvalidToken`. `FaSessionMiddleware` with a fake `SessionGate`: boots always, enters only with claims, gate exceptions propagate. `GraphQLAction`: 400 for a bad body and a batch, depth limit, `ErrorFormatter` applied. `JsonErrorMiddleware`: each exception -> its status and code, `INTERNAL` masking, `debug`. **`ApplicationTestCase`**, as in the panel: the real `app.php` over a test container with a fake `SessionGate`, driven by `$app->handle($request)` — 404, 405, middleware order (401 before 400), `apiVersion`. *(revised: anorm-graphql)* `FaModelType`: a verb without an area is `Forbidden`. |
-| `integration` | database; FrontAccounting loaded in-process | `Bootstrap` loads FrontAccounting with no output and no headers. `FaSession::enter`: a verified claim yields a logged-in `wa_current_user` with the role's areas; a deactivated user is refused; a user without `SA_GRAPHQL` is `Forbidden`; an unknown company is refused. **`hooks_graphql::authenticate` returns `null` when `VerifiedIdentity` is unset, set for another login, or set for another company; the flag is cleared after `enter()` whether it succeeds or throws.** A wrong password still fails through `login`. A FrontAccounting `E_USER_ERROR` becomes `FaErrorException`. `AnormRefreshTokenRepository` round trip. With `sgw_sales` active, a verified identity still logs in. *(revised: anorm-graphql)* The generated tests in `tests/Generated` (`SalesTypeTypeTest`), logged in as `apitest`. *(revised: one company per request)* `OneCompanyPerRequestTest`, with a second company (`SecondCompany`: company 0's database under the same prefix, served in-process by overlaying `config_db.php`; nothing on disk changes): a bearer session followed by `tokenRefresh("1.<company-0 secret>")`, or by `login(company: 1)`, and a second `login` for another company, are refused with no token issued or rotated; `FaSession` refuses a second company and re-opens the same one; `CompanyPdo` refuses every statement once `CompanyContext` names another company. `tokenRefresh` for a deactivated or deleted user is refused and the token is not rotated. |
+| `unit` | nothing | `TokenService`: round trip, expiry, `nbf`, tampered signature, wrong issuer, wrong algorithm, missing claims. `RefreshTokenService` against an in-memory repository and a fixed `Clock`: issue, rotate, expiry, revoke one, revoke all, **reuse of a rotated token revokes the chain**, `<coy>.<secret>` parsing. `Config`: every fail-closed rule. `CompanyContext` defaults and `reset()`. `Guard::requireFor` deny-by-default. `ErrorFormatter`: each code, `INTERNAL` masking, `debug`. *(revised: Slim 4)* `BodyLimitMiddleware`: 413 by header and by real size. `AuthenticationMiddleware`: no header -> `null` claims; bad token -> `InvalidToken`. `FaSessionMiddleware` with a fake `SessionGate`: boots always, enters only with claims, gate exceptions propagate. `GraphQLAction`: 400 for a bad body and a batch, depth limit, `ErrorFormatter` applied. `JsonErrorMiddleware`: each exception -> its status and code, `INTERNAL` masking, `debug`. **`ApplicationTestCase`**, as in the panel: the real `app.php` over a test container with a fake `SessionGate`, driven by `$app->handle($request)` — 404, 405, middleware order (401 before 400), `apiVersion`. *(revised: anorm-graphql)* `FaModelType`: a verb without an area is `Forbidden`. *(revised: upstream FA)* `OutputCapture`: captured output is logged and never returned; in a child process (`proc_open`) a script that starts the capture, prints HTML and calls `exit`, and one that hits a fatal error, each write exactly the JSON 500 to stdout. `fa_session_compat.php` defines every function the fork's `session_utils.inc` and upstream's `session.inc` define outside `SessionManager` (compared by parsing both files when present). |
+| `integration` | database; FrontAccounting loaded in-process | `Bootstrap` loads FrontAccounting with no output and no headers. `FaSession::enter`: a verified claim yields a logged-in `wa_current_user` with the role's areas; a deactivated user is refused; a user without `SA_GRAPHQL` is `Forbidden`; an unknown company is refused. **`hooks_graphql::authenticate` returns `null` when `VerifiedIdentity` is unset, set for another login, or set for another company; the flag is cleared after `enter()` whether it succeeds or throws.** A wrong password still fails through `login`. *(revised: upstream FA)* `Bootstrap` uses the fork's `session_utils.inc` when present and `fa_session_compat.php` otherwise; on upstream every suite runs unchanged. A FrontAccounting `E_USER_ERROR` becomes `FaErrorException`. `AnormRefreshTokenRepository` round trip. With `sgw_sales` active, a verified identity still logs in. *(revised: anorm-graphql)* The generated tests in `tests/Generated` (`SalesTypeTypeTest`), logged in as `apitest`. *(revised: one company per request)* `OneCompanyPerRequestTest`, with a second company (`SecondCompany`: company 0's database under the same prefix, served in-process by overlaying `config_db.php`; nothing on disk changes): a bearer session followed by `tokenRefresh("1.<company-0 secret>")`, or by `login(company: 1)`, and a second `login` for another company, are refused with no token issued or rotated; `FaSession` refuses a second company and re-opens the same one; `CompanyPdo` refuses every statement once `CompanyContext` names another company. `tokenRefresh` for a deactivated or deleted user is refused and the token is not rotated. |
 | `http` | Apache | `login` -> `me` -> `tokenRefresh` -> the old refresh token is rejected and the chain is revoked -> `login` again -> `tokenRevoke`. `noapi` user: `FORBIDDEN`. No token: `UNAUTHENTICATED` on `me`, success on `apiVersion`. Expired and tampered tokens: 401. A token for a company that does not exist: 401. *(revised)* GET: 405; an unknown path under the module: 404 — proving `.htaccess` and the base path in the real vhost. `salesTypeList`: `apitest` lists; `noapi` `FORBIDDEN`; no token `UNAUTHENTICATED`. Every response parses as JSON. |
 
 Integration tests that load FrontAccounting run with
@@ -822,19 +870,22 @@ user `noapi` in a role without `SA_GRAPHQL`. Both with password `password`.
 Gates: `composer lint`, `cs:check` (PSR-12), `analyze` (PHPStan level 5, with
 `../../includes` scanned for FrontAccounting's symbols), `test`. `.github/workflows/
 ci.yml` runs `docker/fa-graphql ci` on PHP 7.4 and 8.3, as `modules/api` does.
+*(revised: upstream FA)* It runs that on upstream `master` and on the fork's
+`master-cp`: four jobs.
 
 ## 9. Docker stack changes
 
-- `FA_REPO` / `FA_REF` default to
-  `https://github.com/cambell-prince/frontaccounting.git` @ `master-cp`.
+- *(revised: upstream FA)* `FA_REPO` / `FA_REF` default to
+  `https://github.com/FrontAccountingERP/FA.git` @ `master`. Setting them to
+  `https://github.com/cambell-prince/frontaccounting.git` @ `master-cp` builds the
+  fork; CI builds both.
 - The image clones `sgw_sales` into `/var/www/html/modules/sgw_sales` from
   `SGW_SALES_REPO` / `SGW_SALES_REF` and runs `composer install --no-dev` there.
   `SGW_SALES_PATH`, like `ANORM_GRAPHQL_PATH`, bind-mounts a host checkout over it
   instead, through `docker-compose.packages.yml`.
 - *(revised)* `SGW_SALES_REF` defaults to `master`, which has been on Anorm ^3.2.1
-  since PR #7 of `saygoweb/frontaccounting-module-sgw_sales` merged. Release 2 will
-  point it at `feature/GenerateService` (PR #8) until that
-  is merged. `SGW_SALES_ACTIVE` therefore defaults to **`true`**; `false` leaves it
+  since PR #7 of `saygoweb/frontaccounting-module-sgw_sales` merged, and has had its
+  generation service since PR #8 merged (2026-09-21). `SGW_SALES_ACTIVE` therefore defaults to **`true`**; `false` leaves it
   cloned but unregistered. Its table is not created by activation in this stack:
   `db load` applies `sql/update_1.0.sql` then `sql/update_1.4.sql`, each cut at its
   `# Upgrade helpers` line.

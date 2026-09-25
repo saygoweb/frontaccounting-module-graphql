@@ -8,7 +8,8 @@ generation work end to end. One generated entity so far: `SalesType`, read-only.
 
 ## Calling the API
 
-Requirements: the `cambell-prince/frontaccounting` fork; `config_graphql.php` copied
+Requirements: FrontAccounting 2.4 — upstream `master` (tested at 2.4.20), or the
+`cambell-prince/frontaccounting` fork; `config_graphql.php` copied
 from `config_graphql.example.php` with a secret of at least 32 bytes; the extension
 activated; and a role that holds **GraphQL API access** plus whatever sales areas the
 client needs. No role has it until you grant it, not even System Administrator.

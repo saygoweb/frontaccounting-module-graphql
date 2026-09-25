@@ -60,6 +60,18 @@ class BootstrapTest extends FaTestCase
         $this->assertSame($prefs, $GLOBALS['SysPrefs']);
     }
 
+    public function testSessionUtilitiesComeFromTheForkWhenItHasThemOtherwiseFromTheModule(): void
+    {
+        $fork = Bootstrap::defaultRoot() . '/includes/session_utils.inc';
+        $expected = is_file($fork)
+            ? realpath($fork)
+            : realpath(dirname(__DIR__, 2) . '/src/Fa/fa_session_compat.php');
+
+        foreach (['html_specials_encode', 'write_login_filelog', 'check_faillog', 'cache_invalidate'] as $function) {
+            $this->assertSame($expected, (new \ReflectionFunction($function))->getFileName(), $function);
+        }
+    }
+
     public function testADatabaseErrorIsAnException(): void
     {
         set_global_connection(0);
@@ -159,5 +171,22 @@ class BootstrapTest extends FaTestCase
     {
         $this->expectException(ConfigException::class);
         Bootstrap::assertRoot(sys_get_temp_dir());
+    }
+
+    public function testARootWithoutTheForksSessionUtilsIsAccepted(): void
+    {
+        $root = sys_get_temp_dir() . '/fa-graphql-upstream-root-' . getmypid();
+        mkdir($root . '/includes', 0777, true);
+        touch($root . '/config_db.php');
+        touch($root . '/includes/current_user.inc');
+        try {
+            Bootstrap::assertRoot($root);
+            $this->addToAssertionCount(1);
+        } finally {
+            unlink($root . '/includes/current_user.inc');
+            unlink($root . '/config_db.php');
+            rmdir($root . '/includes');
+            rmdir($root);
+        }
     }
 }

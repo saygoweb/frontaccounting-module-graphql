@@ -16,8 +16,8 @@ class SessionPipelineTest extends ApplicationTestCase
 {
     protected function setUp(): void
     {
-        if (!is_file(Bootstrap::defaultRoot() . '/includes/session_utils.inc')) {
-            $this->markTestSkipped('No FrontAccounting fork here; run in the docker stack.');
+        if (!is_file(Bootstrap::defaultRoot() . '/config_db.php')) {
+            $this->markTestSkipped('No FrontAccounting here; run in the docker stack.');
         }
         parent::setUp();
     }
