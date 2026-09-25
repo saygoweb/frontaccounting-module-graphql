@@ -124,4 +124,38 @@ class FaModelTypeTest extends TestCase
         // PHP refuses to instantiate a generated <Entity>Type that did not add areas().
         $this->assertTrue((new \ReflectionMethod(FaModelType::class, 'areas'))->isAbstract());
     }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public function writeResolvers(): array
+    {
+        return [
+            'create' => ['resolveCreate'],
+            'update' => ['resolveUpdate'],
+            'delete' => ['resolveDelete'],
+            'upsert' => ['resolveUpsert'],
+        ];
+    }
+
+    /**
+     * Release 2 spec section 2.2: a generated Type whose write path was never
+     * declared refuses, whatever the role holds, instead of writing the table.
+     *
+     * @dataProvider writeResolvers
+     */
+    public function testAWriteWithNoDeclaredPathIsForbidden(string $resolver): void
+    {
+        $this->signIn(['SA_GRAPHQL', 'SA_SALESORDER', 'SA_CUSTOMER']);
+        $type = $this->type([
+            ModelType::VERB_LIST => 'SA_SALESORDER',
+            ModelType::VERB_CREATE => 'SA_SALESORDER',
+            ModelType::VERB_EDIT => 'SA_SALESORDER',
+            ModelType::VERB_DELETE => 'SA_SALESORDER',
+        ]);
+
+        $this->expectException(Forbidden::class);
+        $this->expectExceptionMessage('This entity is written through FrontAccounting; no write path is declared.');
+        $type->$resolver(null, ['input' => [['id' => '1']], 'id' => ['1']], new Container());
+    }
 }

@@ -11,13 +11,17 @@ class FaRejected extends ApiError
     /** @var string[] */
     private array $messages;
 
+    private ?int $index;
+
     /**
      * @param string[] $messages
+     * @param int|null $index the batch item FrontAccounting refused, when in a batch
      */
-    public function __construct(string $message, array $messages = [])
+    public function __construct(string $message, array $messages = [], ?int $index = null)
     {
         parent::__construct($message);
         $this->messages = array_values($messages);
+        $this->index = $index;
     }
 
     public function code(): string
@@ -32,6 +36,11 @@ class FaRejected extends ApiError
 
     public function getExtensions(): ?array
     {
-        return ['code' => $this->code(), 'messages' => $this->messages];
+        $extensions = ['code' => $this->code(), 'messages' => $this->messages];
+        if ($this->index !== null) {
+            $extensions['index'] = $this->index;
+        }
+
+        return $extensions;
     }
 }

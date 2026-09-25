@@ -5,6 +5,7 @@ namespace FA\GraphQL\Tests\Unit\Http;
 use DI\Container;
 use FA\GraphQL\Config;
 use FA\GraphQL\Error\ErrorFormatter;
+use FA\GraphQL\Fa\Warnings;
 use FA\GraphQL\Http\GraphQLAction;
 use FA\GraphQL\Http\RequestRejected;
 use GraphQL\Type\Definition\CustomScalarType;
@@ -44,6 +45,10 @@ class GraphQLActionTest extends TestCase
             'boom' => ['type' => Type::string(), 'resolve' => function () {
                 throw new \RuntimeException('secret detail');
             }],
+            'warn' => ['type' => Type::string(), 'resolve' => function () {
+                Warnings::add('Price below cost');
+                return 'ok';
+            }],
             'node' => ['type' => $node, 'resolve' => function () {
                 return [];
             }],
@@ -51,6 +56,11 @@ class GraphQLActionTest extends TestCase
 
         $this->container = new Container();
         $this->container->set(Schema::class, $schema);
+    }
+
+    protected function tearDown(): void
+    {
+        Warnings::reset();
     }
 
     /**
@@ -222,5 +232,20 @@ class GraphQLActionTest extends TestCase
 
         $this->expectException(\JsonException::class);
         $action($request, new Response());
+    }
+
+    public function testWarningsTravelInTopLevelExtensions(): void
+    {
+        $this->assertSame(
+            ['data' => ['warn' => 'ok'], 'extensions' => ['warnings' => ['Price below cost']]],
+            $this->execute('{"query": "{ warn }"}')
+        );
+    }
+
+    public function testNoWarningsNoExtensionsAndNothingCarriesOverFromTheLastRequest(): void
+    {
+        Warnings::add('left over from an earlier request');
+
+        $this->assertSame(['data' => ['apiVersion' => '0.1.0']], $this->execute('{"query": "{ apiVersion }"}'));
     }
 }

@@ -4,6 +4,7 @@ namespace FA\GraphQL\Http;
 
 use FA\GraphQL\Config;
 use FA\GraphQL\Error\ErrorFormatter;
+use FA\GraphQL\Fa\Warnings;
 use GraphQL\GraphQL;
 use GraphQL\Type\Schema;
 use GraphQL\Validator\DocumentValidator;
@@ -41,6 +42,9 @@ final class GraphQLAction
             throw new RequestRejected(400, 'The request body must be JSON with a "query" string.');
         }
 
+        // Per request: a warning belongs to the request whose work committed.
+        Warnings::reset();
+
         $rules = DocumentValidator::allRules();
         $rules[QueryDepth::class] = new QueryDepth($this->config->maxDepth);
         $rules[QueryComplexity::class] = new QueryComplexity($this->config->maxComplexity);
@@ -56,13 +60,22 @@ final class GraphQLAction
             $rules
         );
         $result->setErrorFormatter($this->formatter);
+        $output = $result->toArray();
+
+        // FrontAccounting's warnings about work that committed (Release 2 spec
+        // section 3.2): the generated mutations return [<Entity>Type!]!, so they
+        // travel beside `data`, not in it.
+        $warnings = Warnings::all();
+        if ($warnings !== []) {
+            $output['extensions']['warnings'] = $warnings;
+        }
 
         // JSON_THROW_ON_ERROR: a resolver value that cannot be encoded (a raw
         // INF/NAN from a custom scalar, say) must not produce a 200 with an empty
         // body. It throws instead, so JsonErrorMiddleware renders a 500 INTERNAL
         // JSON body — every response body is JSON (spec section 6).
         $response->getBody()->write(
-            (string) json_encode($result->toArray(), JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR)
+            (string) json_encode($output, JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR)
         );
 
         return $response->withHeader('Content-Type', 'application/json; charset=utf-8');
