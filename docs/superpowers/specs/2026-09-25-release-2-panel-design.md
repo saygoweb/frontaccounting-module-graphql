@@ -267,8 +267,9 @@ update and delete need `SA_SALESORDER`.
   order with no deliveries is deleted (`delete_sales_order`), its schedule deleted
   in the same transaction; an order with deliveries is closed (`close_sales_order`:
   quantities set to what was delivered) and its schedule gets `end = today` when
-  that is earlier than its end. The version is checked as for update. Returns the
-  orders as they were.
+  that is earlier than its end. Returns the orders as they were. The version is not
+  checked: the generated `salesOrderDelete(id: [ID!]!)` carries none, and the
+  generated shape wins (§1).
 
 ### 4.5 Recurrence
 
@@ -333,7 +334,11 @@ For the named entities, generate only the Input(s) (`Create`/`Update` under
 dates are strings. 0.2 maps a property declared `\DateTimeInterface` (or a subtype)
 to a `Date` scalar shipped in the runtime: ISO `YYYY-MM-DD` out and in, invalid
 input a client-safe error. Datetime columns stay `String` unless a later release
-needs them.
+needs them. The scalar is one shared instance,
+`\Anorm\GraphQL\Type\DateType::instance()`: a schema may hold only one type named
+`Date`, and generated Types build their fields without the container, so it is never
+registered in the container. Hand-written date fields (the `recurring` fields, line
+dates) use the same instance.
 
 ## 7. Testing and test data
 
