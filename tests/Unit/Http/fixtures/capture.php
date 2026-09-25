@@ -50,6 +50,11 @@ switch ($_GET['case'] ?? '') {
             echo 'printed by a later shutdown function';
         });
         break;
+    case 'late-then-exit':
+        register_shutdown_function(static function (): void {
+            echo 'LATE';
+        });
+        exit;
 }
 
 OutputCapture::end();

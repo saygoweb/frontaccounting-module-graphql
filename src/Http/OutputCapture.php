@@ -102,6 +102,7 @@ final class OutputCapture
             header('Content-Type: application/json; charset=utf-8');
         }
         echo self::BODY;
+        self::afterEmit();
     }
 
     /**

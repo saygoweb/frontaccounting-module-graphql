@@ -92,6 +92,7 @@ class OutputCaptureServerTest extends TestCase
             'fatal error' => ['fatal'],
             'E_USER_ERROR' => ['user-error'],
             'a 401 header, then exit' => ['header-then-exit'],
+            'a later shutdown function prints, then exit' => ['late-then-exit'],
         ];
     }
 
