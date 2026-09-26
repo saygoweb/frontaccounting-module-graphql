@@ -29,6 +29,13 @@ class SalesOrderService
     private const FROZEN = 'Something on this order has been delivered or invoiced: its customer, branch, price list, '
         . 'date, payment terms and prepayment can no longer change.';
 
+    private RecurringSchedule $schedule;
+
+    public function __construct(RecurringSchedule $schedule)
+    {
+        $this->schedule = $schedule;
+    }
+
     /**
      * @param array<string, mixed> $input a SalesOrderCreateInput
      * @return int the new order's number
@@ -47,6 +54,12 @@ class SalesOrderService
 
         // cart_class.inc :94-110, read() :246-286: a new cart with a default date and
         // reference. The date is replaced before anything is computed from it.
+        if (self::given($input, 'recurring')) {
+            // Refused before anything is written: sgw_sales absent, or a bad schedule.
+            $this->schedule->assertWritable('recurring');
+            RecurringSchedule::toColumns($input['recurring']);
+        }
+
         $cart = new \Cart(ST_SALESORDER, 0);
         $cart->document_date = $date;
         $cart->cust_ref = '';
@@ -68,6 +81,9 @@ class SalesOrderService
         $orderNo = $cart->write(1);
         if ($orderNo == -1) {
             throw new BadInput('The entered reference is already in use.', 'reference');
+        }
+        if (self::given($input, 'recurring')) {
+            $this->schedule->write((int) $orderNo, $input['recurring']);
         }
 
         return (int) $orderNo;
@@ -479,6 +495,10 @@ class SalesOrderService
     public function update(array $input): void
     {
         FaIncludes::orders();
+        if (self::given($input, 'recurring')) {
+            $this->schedule->assertWritable('recurring');
+            RecurringSchedule::toColumns($input['recurring']);
+        }
         $id = (int) $input['id'];
         $this->lockVersion($id, (int) $input['version']);
         $this->assertEditable($id);
@@ -564,14 +584,14 @@ class SalesOrderService
     }
 
     /**
-     * Task 9: whether the order has (or is being given) a recurring schedule, which
-     * relaxes the frozen header and the delivered-quantity floor as sgw_sales does.
+     * sgw_sales keys its relaxations to its "Recurring Order" box: an order that has a
+     * schedule, or is being given one now.
      *
      * @param array<string, mixed> $input
      */
     protected function isRecurringOrder(int $id, array $input): bool
     {
-        return false;
+        return self::given($input, 'recurring') || $this->schedule->read($id) !== null;
     }
 
     /**
@@ -579,14 +599,19 @@ class SalesOrderService
      */
     protected function afterUpdate(int $id, array $input): void
     {
+        if (self::given($input, 'recurring')) {
+            $this->schedule->write($id, $input['recurring']);
+        }
     }
 
     protected function afterDelete(int $id): void
     {
+        $this->schedule->delete($id);
     }
 
     protected function afterClose(int $id): void
     {
+        $this->schedule->end($id, DateConversion::fromFa(\Today()));
     }
 
     /**

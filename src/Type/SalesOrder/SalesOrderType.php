@@ -6,6 +6,7 @@ use Anorm\DataMapper;
 use Anorm\GraphQL\Builder\FieldBuilder;
 use Anorm\GraphQL\Mapper;
 use DI\Container;
+use FA\GraphQL\Fa\Service\RecurringSchedule;
 use FA\GraphQL\Fa\Service\SalesOrderService;
 use FA\GraphQL\Fa\Service\ServiceCall;
 use FA\GraphQL\Fa\Warnings;
@@ -25,10 +26,13 @@ class SalesOrderType extends SalesOrderTypeBase
 {
     private SalesOrderLineType $lineType;
 
-    public function __construct(SalesOrderLineType $lineType)
+    private RecurrenceType $recurrenceType;
+
+    public function __construct(SalesOrderLineType $lineType, RecurrenceType $recurrenceType)
     {
         // Before parent::__construct(), which calls fields().
         $this->lineType = $lineType;
+        $this->recurrenceType = $recurrenceType;
         parent::__construct();
     }
 
@@ -58,6 +62,14 @@ class SalesOrderType extends SalesOrderTypeBase
                 ->setResolver(function (array $row, $args, $context): array {
                     // A snapshot taken before a delete (Task 8) is returned as it was.
                     return $row['lines'] ?? self::linesOf((int) $row['id'], $context);
+                })
+                ->build(),
+            FieldBuilder::create('recurring', $this->recurrenceType)
+                ->setDescription('The recurring schedule, when sgw_sales is active and the order has one.')
+                ->setResolver(function (array $row, $args, $context): ?array {
+                    return array_key_exists('recurring', $row)
+                        ? $row['recurring']
+                        : $context->get(RecurringSchedule::class)->read((int) $row['id']);
                 })
                 ->build(),
         ]);
@@ -105,6 +117,7 @@ class SalesOrderType extends SalesOrderTypeBase
         $before = [];
         foreach ($this->rowsById($context, $ids, self::VERB_DELETE) as $index => $row) {
             $row['lines'] = self::linesOf($ids[$index], $context);
+            $row['recurring'] = $context->get(RecurringSchedule::class)->read($ids[$index]);
             $before[] = $row;
         }
 

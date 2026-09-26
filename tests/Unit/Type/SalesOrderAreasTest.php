@@ -4,6 +4,8 @@ namespace FA\GraphQL\Tests\Unit\Type;
 
 use DI\Container;
 use FA\GraphQL\Error\Forbidden;
+use FA\GraphQL\Type\SalesOrder\RecurrenceRepeatsType;
+use FA\GraphQL\Type\SalesOrder\RecurrenceType;
 use FA\GraphQL\Type\SalesOrder\SalesOrderType;
 use FA\GraphQL\Type\SalesOrderLine\SalesOrderLineType;
 use PHPUnit\Framework\TestCase;
@@ -56,7 +58,7 @@ class SalesOrderAreasTest extends TestCase
                 'edit' => 'SA_SALESORDER',
                 'delete' => 'SA_SALESORDER',
             ],
-            $this->areasOf(new SalesOrderType(new SalesOrderLineType()))
+            $this->areasOf(self::orderType())
         );
         $this->assertSame(['list' => 'SA_SALESTRANSVIEW'], $this->areasOf(new SalesOrderLineType()));
     }
@@ -67,7 +69,7 @@ class SalesOrderAreasTest extends TestCase
 
         $this->expectException(Forbidden::class);
         $this->expectExceptionMessage('SA_SALESORDER');
-        (new SalesOrderType(new SalesOrderLineType()))->resolveCreate(null, ['input' => [[]]], new Container());
+        (self::orderType())->resolveCreate(null, ['input' => [[]]], new Container());
     }
 
     /**
@@ -77,7 +79,7 @@ class SalesOrderAreasTest extends TestCase
     public function testUpdatingOrDeletingWithoutTheOrderAreaIsForbiddenBeforeAnythingIsTouched(): void
     {
         $this->signIn(['SA_GRAPHQL', 'SA_SALESTRANSVIEW']);
-        $type = new SalesOrderType(new SalesOrderLineType());
+        $type = self::orderType();
 
         $calls = ['resolveUpdate' => ['input' => [['id' => '1']]], 'resolveDelete' => ['id' => ['1']]];
         foreach ($calls as $method => $args) {
@@ -96,5 +98,10 @@ class SalesOrderAreasTest extends TestCase
         $scope->setAccessible(true);
 
         $this->assertSame(['transType' => 30], $scope->invoke(new SalesOrderLineType()));
+    }
+
+    private static function orderType(): SalesOrderType
+    {
+        return new SalesOrderType(new SalesOrderLineType(), new RecurrenceType(new RecurrenceRepeatsType()));
     }
 }

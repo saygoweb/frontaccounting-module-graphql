@@ -92,6 +92,7 @@ class SalesOrderTypeTest extends TestCase
         parent::tearDown();
         $pdo = $this->container->get(\PDO::class);
         foreach ($this->made as $orderNo) {
+            self::purgeSchedule($this->container, $orderNo);
             foreach (
                 [
                 'DELETE FROM 0_sales_order_details WHERE trans_type = 30 AND order_no = ?',
@@ -129,7 +130,7 @@ class SalesOrderTypeTest extends TestCase
      * The create Input: the Type's fields less the key and SalesOrderCreateInput::SERVER_SET,
      * the required ones non-null, plus the lines. The update Input: a patch — the key
      * and the version read non-null, the rest optional, less SalesOrderUpdateInput::SERVER_SET,
-     * plus the optional lines.
+     * plus the optional lines. Both take the optional recurring schedule (Task 9).
      */
     public function testInputMirrorsTheType(): void
     {
@@ -156,17 +157,61 @@ class SalesOrderTypeTest extends TestCase
             $this->assertSame($required ? $bare . '!' : $bare, $create[$name] ?? null, "SalesOrderCreateInput.$name");
         }
         $this->assertSame('[SalesOrderLineCreateInput!]!', $create['lines'] ?? null);
+        $this->assertSame('RecurrenceInput', $create['recurring'] ?? null);
         $this->assertSame(
             [],
-            array_diff(array_keys($create), array_keys($this->expectedFieldTypes()), ['lines']),
+            array_diff(array_keys($create), array_keys($this->expectedFieldTypes()), ['lines', 'recurring']),
             'nothing else on the create Input'
         );
         $this->assertSame('[SalesOrderLineUpdateInput!]', $update['lines'] ?? null);
+        $this->assertSame('RecurrenceInput', $update['recurring'] ?? null);
         $this->assertSame(
             [],
-            array_diff(array_keys($update), array_keys($this->expectedFieldTypes()), ['lines']),
+            array_diff(array_keys($update), array_keys($this->expectedFieldTypes()), ['lines', 'recurring']),
             'nothing else on the update Input'
         );
+    }
+
+    public function testARecurringOrderThroughTheSchema(): void
+    {
+        if (!$this->container->get(\FA\GraphQL\Fa\Service\RecurringSchedule::class)->isAvailable()) {
+            $this->markTestSkipped('sgw_sales is not active in this stack.');
+        }
+        $input = array_merge($this->sampleInput(), [
+            'recurring' => ['start' => date('Y-m-d'), 'repeats' => 'MONTH', 'every' => 1, 'day' => 1],
+        ]);
+        $created = $this->runGraphQL(
+            'mutation ($input: [SalesOrderCreateInput!]!) { salesOrderCreate(input: $input) {'
+            . ' id recurring { start repeats every day monthDay next auto } } }',
+            ['input' => [$input]]
+        )['salesOrderCreate'];
+        $this->made[] = (int) $created[0]['id'];
+
+        $this->assertSame(
+            [
+                'start' => date('Y-m-d'),
+                'repeats' => 'MONTH',
+                'every' => 1,
+                'day' => 1,
+                'monthDay' => null,
+                'next' => null,
+                'auto' => true,
+            ],
+            $created[0]['recurring']
+        );
+        self::purgeSchedule($this->container, (int) $created[0]['id']);
+    }
+
+    /**
+     * @param mixed $container
+     */
+    public static function purgeSchedule($container, int $orderNo): void
+    {
+        $pdo = $container->get(\PDO::class);
+        // As SalesOrderTestCase::purgeOrder(): a stack without sgw_sales has no table.
+        if ($pdo->query("SHOW TABLES LIKE '0_sales_recurring'")->fetch() !== false) {
+            $pdo->prepare('DELETE FROM 0_sales_recurring WHERE trans_no = ?')->execute([$orderNo]);
+        }
     }
 
     /**
@@ -207,7 +252,9 @@ class SalesOrderTypeTest extends TestCase
 
         $read = $this->runGraphQL(
             'query ($q: MangoInput) {
-                salesOrderList(query: $q) { id lines { stockId quantity qtyDelivered discountPercent } }
+                salesOrderList(query: $q) {
+                    id lines { stockId quantity qtyDelivered discountPercent } recurring { repeats }
+                }
             }',
             ['q' => ['selector' => json_encode(['id' => $id])]]
         )['salesOrderList'];
@@ -216,6 +263,7 @@ class SalesOrderTypeTest extends TestCase
             [['stockId' => '101', 'quantity' => 1.0, 'qtyDelivered' => 0.0, 'discountPercent' => 0.0]],
             $read[0]['lines']
         );
+        $this->assertNull($read[0]['recurring'], 'a plain order has no schedule');
 
         $version = (int) $created[0]['version'];
         $updated = $this->runGraphQL(

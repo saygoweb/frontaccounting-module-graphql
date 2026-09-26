@@ -21,10 +21,13 @@ class SalesOrderUpdateInput extends SalesOrderUpdateInputBase
 
     private SalesOrderLineUpdateInput $lineInput;
 
-    public function __construct(SalesOrderLineUpdateInput $lineInput)
+    private RecurrenceInputType $recurrenceInput;
+
+    public function __construct(SalesOrderLineUpdateInput $lineInput, RecurrenceInputType $recurrenceInput)
     {
         // Before parent::__construct(), which builds the fields.
         $this->lineInput = $lineInput;
+        $this->recurrenceInput = $recurrenceInput;
         parent::__construct();
     }
 
@@ -46,6 +49,10 @@ class SalesOrderUpdateInput extends SalesOrderUpdateInputBase
                 'When given, replaces the lines: one with an id is updated, one without is added, '
                 . 'an omitted one is deleted. A delivered line cannot be deleted.'
             )
+            ->build();
+
+        $fields[] = FieldBuilder::create('recurring', $this->recurrenceInput)
+            ->setDescription('Set or replace the recurring schedule; to end it, give an end. Needs sgw_sales.')
             ->build();
 
         return $fields;

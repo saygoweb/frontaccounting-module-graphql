@@ -21,10 +21,13 @@ class SalesOrderCreateInput extends SalesOrderCreateInputBase
 
     private SalesOrderLineCreateInput $lineInput;
 
-    public function __construct(SalesOrderLineCreateInput $lineInput)
+    private RecurrenceInputType $recurrenceInput;
+
+    public function __construct(SalesOrderLineCreateInput $lineInput, RecurrenceInputType $recurrenceInput)
     {
         // Before parent::__construct(), which builds the fields.
         $this->lineInput = $lineInput;
+        $this->recurrenceInput = $recurrenceInput;
         parent::__construct();
     }
 
@@ -35,6 +38,10 @@ class SalesOrderCreateInput extends SalesOrderCreateInputBase
         }));
         $fields[] = FieldBuilder::create('lines', Type::nonNull(Type::listOf(Type::nonNull($this->lineInput))))
             ->setDescription('At least one. A kit is expanded into its components.')
+            ->build();
+
+        $fields[] = FieldBuilder::create('recurring', $this->recurrenceInput)
+            ->setDescription('A recurring schedule. Needs the sgw_sales extension, active for the company.')
             ->build();
 
         return $fields;
