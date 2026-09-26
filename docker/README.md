@@ -73,6 +73,7 @@ pilot), a user in it, and a user without `SA_GRAPHQL`:
 | --- | --- | --- |
 | `apitest` | `password` | `GraphQL API` (`SA_GRAPHQL`, `SA_SALESTYPES`) |
 | `noapi` | `password` | System Administrator (no `SA_GRAPHQL`) |
+| `apiorders` | `password` | `GraphQL Orders` (`SA_GRAPHQL`, `SA_SALESTRANSVIEW`, `SA_SALESORDER` only) |
 
 The whole sequence is idempotent, so a repeated `db load` (or `up` against an
 already-seeded volume) is safe.
