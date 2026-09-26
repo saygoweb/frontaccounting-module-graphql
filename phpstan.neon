@@ -55,3 +55,5 @@ parameters:
         # Voider: void_transaction, get_voided_entry (admin/ is not under
         # scanDirectories' includes/).
         - ../../admin/db/voiding_db.inc
+        # DeliveryService: adjust_shipping_charge (sales_delivery_db.inc).
+        - ../../sales/includes/db/sales_delivery_db.inc

@@ -19,6 +19,9 @@ use FA\GraphQL\Type\Currency\CurrencyType;
 use FA\GraphQL\Type\Customer\CustomerCreateInput;
 use FA\GraphQL\Type\Customer\CustomerType;
 use FA\GraphQL\Type\Customer\CustomerUpdateInput;
+use FA\GraphQL\Type\DeliveryLine\DeliveryLineType;
+use FA\GraphQL\Type\Delivery\DeliveryCreateInput;
+use FA\GraphQL\Type\Delivery\DeliveryType;
 use FA\GraphQL\Type\Location\LocationType;
 use FA\GraphQL\Type\PaymentTerms\PaymentTermsType;
 use FA\GraphQL\Type\SalesArea\SalesAreaType;
@@ -92,6 +95,18 @@ class ApiSchema extends Schema
                         ->build(),
                     // anorm-graphql
                     GraphQLUtils::createListField('customerList', $this->type(CustomerType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'deliveryLineList',
+                        $this->type(DeliveryLineType::class),
+                        'resolveList'
+                    )
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('deliveryList', $this->type(DeliveryType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
                     // anorm-graphql
@@ -207,6 +222,17 @@ class ApiSchema extends Schema
                             'input',
                             Type::nonNull(Type::listOf(Type::nonNull($this->type(CustomerUpdateInput::class))))
                         )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('deliveryCreate', $this->type(DeliveryType::class), 'resolveCreate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(DeliveryCreateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('deliveryDelete', $this->type(DeliveryType::class), 'resolveDelete')
+                        ->addArgument('id', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
                         ->build(),
                     'login' => [
                         'type' => Type::nonNull($this->type(AuthPayloadType::class)),

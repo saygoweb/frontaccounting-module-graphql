@@ -5,7 +5,6 @@ namespace FA\GraphQL\Fa\Service;
 use FA\GraphQL\Error\BadInput;
 use FA\GraphQL\Error\FaRejected;
 use FA\GraphQL\Error\Forbidden;
-use FA\GraphQL\Error\NotFound;
 use FA\GraphQL\Fa\DateConversion;
 
 /**
@@ -503,7 +502,7 @@ class SalesOrderService
             RecurringSchedule::toColumns($input['recurring']);
         }
         $id = (int) $input['id'];
-        $this->lockVersion($id, (int) $input['version']);
+        OrderLock::version($id, (int) $input['version']);
         $this->assertEditable($id);
 
         // read_sales_order(), sales_order_db.inc :303-355.
@@ -571,7 +570,7 @@ class SalesOrderService
     public function delete(int $id): string
     {
         FaIncludes::orders();
-        $this->lockOrder($id);
+        OrderLock::lock($id);
         $this->assertEditable($id);
 
         if (sales_order_has_deliveries($id)) {
@@ -615,47 +614,6 @@ class SalesOrderService
     protected function afterClose(int $id): void
     {
         $this->schedule->end($id, DateConversion::fromFa(\Today()));
-    }
-
-    /**
-     * The row lock and the version check, inside the caller's transaction: the lock
-     * holds until it commits, so nobody writes between this check and ours.
-     * FrontAccounting's own check (update_sales_order()'s WHERE version = …) ignores a
-     * zero-row update and rewrites the lines anyway.
-     *
-     * sales_orders.version is tinyint unsigned: FrontAccounting connects with
-     * sql_mode = STRICT_ALL_TABLES, so a write that would take version past 255 fails
-     * in FrontAccounting itself with an INTERNAL "out of range" error, and the order
-     * can never be edited again (Checkpoint C review M-1). Refused here, before any
-     * write, as FA_REJECTED instead.
-     */
-    private function lockVersion(int $id, int $version): void
-    {
-        $current = $this->lockOrder($id);
-        if ($current >= self::VERSION_LIMIT) {
-            throw new FaRejected(self::EDIT_LIMIT, [self::EDIT_LIMIT]);
-        }
-        if ($current !== $version) {
-            throw new FaRejected(self::STALE, [self::STALE]);
-        }
-    }
-
-    /**
-     * @return int the order's version
-     */
-    private function lockOrder(int $id): int
-    {
-        $result = db_query(
-            'SELECT version FROM ' . TB_PREF . 'sales_orders WHERE order_no = ' . db_escape($id)
-            . ' AND trans_type = ' . ST_SALESORDER . ' FOR UPDATE',
-            'could not lock the sales order'
-        );
-        $row = db_fetch($result);
-        if (!$row) {
-            throw new NotFound("There is no sales order $id.");
-        }
-
-        return (int) $row['version'];
     }
 
     /**
