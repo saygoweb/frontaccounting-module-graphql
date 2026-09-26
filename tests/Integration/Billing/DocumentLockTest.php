@@ -58,6 +58,33 @@ class DocumentLockTest extends FaTestCase
         );
     }
 
+    public function testAFailedReleaseIsLoggedAndTheWorksErrorWins(): void
+    {
+        // Checkpoint B M-5: the connection dies inside the work, so RELEASE_LOCK
+        // fails too; the lock went with the connection.
+        $other = FaTestRows::connect();
+        $log = tempnam(sys_get_temp_dir(), 'fa-graphql-lock');
+        $previous = ini_set('error_log', (string) $log);
+        try {
+            DocumentLock::run(function () use ($other): void {
+                $id = (int) db_fetch_row(db_query('SELECT CONNECTION_ID()', 'could not read'))[0];
+                $other->exec('KILL ' . $id);
+                throw new \RuntimeException('boom');
+            });
+            $this->fail('the work\'s exception must propagate');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('boom', $e->getMessage());
+        } finally {
+            ini_set('error_log', (string) $previous);
+        }
+        $logged = (string) file_get_contents((string) $log);
+        unlink((string) $log);
+        $this->assertStringContainsString('could not release the document lock', $logged);
+        $this->assertSame('1', (string) $other->query(
+            'SELECT IS_FREE_LOCK(' . $other->quote(DocumentLock::name()) . ')'
+        )->fetchColumn());
+    }
+
     public function testASecondWriterWaitsAndThenIsRefusedAsBusy(): void
     {
         $other = FaTestRows::connect();

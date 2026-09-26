@@ -96,6 +96,185 @@ class InvoiceServiceTest extends InvoiceTestCase
         $this->assertEquals(3, $this->detailRows(13, $dn)[0]['qty_done']);
     }
 
+    public function testADeliveryInvoicedInPartsChargesItsFreightOnce(): void
+    {
+        // Checkpoint B I-1: the default freight of a delivery is charged by the first
+        // invoice of it only; the rest of it is invoiced without freight.
+        $orderNo = $this->createOrder(['lines' => [['stockId' => '101', 'quantity' => 3.0]], 'freight' => 0.0]);
+        $dn = $this->deliverOrder($orderNo, null, ['freight' => 5.0]);
+        $deliveryLine = (int) $this->detailRows(13, $dn)[0]['id'];
+
+        $first = $this->invoice([
+            'deliveryIds' => [$dn],
+            'date' => new \DateTimeImmutable($this->today()),
+            'lines' => [['deliveryLineId' => $deliveryLine, 'quantity' => 1.0]],
+        ]);
+        $second = $this->invoice(['deliveryIds' => [$dn], 'date' => new \DateTimeImmutable($this->today())]);
+
+        $this->assertEquals(5, $this->transRow(10, $first)['ov_freight']);
+        $this->assertEquals(0, $this->transRow(10, $second)['ov_freight'], 'the freight was billed once');
+        $this->assertSame(0.0, $this->glSum(10, $first));
+        $this->assertSame(0.0, $this->glSum(10, $second));
+    }
+
+    public function testOnlyTheUninvoicedDeliveriesOfABatchAddTheirFreight(): void
+    {
+        $orderNo = $this->createOrder(['lines' => [['stockId' => '101', 'quantity' => 3.0]], 'freight' => 0.0]);
+        $lineId = $this->lineIds($orderNo)[0];
+        $dn1 = $this->deliverOrder($orderNo, [['orderLineId' => $lineId, 'quantity' => 2.0]], ['freight' => 3.0]);
+        $dn2 = $this->deliverOrder($orderNo, [['orderLineId' => $lineId, 'quantity' => 1.0]], ['freight' => 4.0]);
+        $this->invoice([
+            'deliveryIds' => [$dn1],
+            'date' => new \DateTimeImmutable($this->today()),
+            'lines' => [['deliveryLineId' => (int) $this->detailRows(13, $dn1)[0]['id'], 'quantity' => 1.0]],
+        ]);
+
+        $invoiceNo = $this->invoice(['deliveryIds' => [$dn1, $dn2], 'date' => new \DateTimeImmutable($this->today())]);
+
+        $this->assertEquals(4, $this->transRow(10, $invoiceNo)['ov_freight'], 'dn1 already charged its 3');
+        $this->assertSame(0.0, $this->glSum(10, $invoiceNo));
+    }
+
+    public function testAGivenFreightAndShipperWinOnTheDeliveriesPath(): void
+    {
+        $this->pdo()->exec(
+            "INSERT INTO 0_shippers (shipper_name, contact, address) VALUES ('Checkpoint B courier', '', '')"
+        );
+        $shipper = (int) $this->pdo()->lastInsertId();
+        try {
+            $orderNo = $this->createOrder(['freight' => 0.0]);
+            $dn = $this->deliverOrder($orderNo, null, ['freight' => 5.0]);
+
+            $invoiceNo = $this->invoice([
+                'deliveryIds' => [$dn],
+                'date' => new \DateTimeImmutable($this->today()),
+                'freight' => 2.5,
+                'shipperId' => $shipper,
+            ]);
+
+            $row = $this->transRow(10, $invoiceNo);
+            $this->assertEquals(2.5, $row['ov_freight']);
+            $this->assertSame((string) $shipper, $row['ship_via']);
+            $this->assertSame(0.0, $this->glSum(10, $invoiceNo));
+        } finally {
+            $this->pdo()->prepare('DELETE FROM 0_shippers WHERE shipper_id = ?')->execute([$shipper]);
+            $this->pdo()->exec('ALTER TABLE 0_shippers AUTO_INCREMENT = 1');
+        }
+    }
+
+    public function testANegativeFreightOrAnUnknownShipperIsRefusedOnTheDeliveriesPath(): void
+    {
+        $orderNo = $this->createOrder();
+        $dn = $this->deliverOrder($orderNo);
+        foreach (['freight' => -1.0, 'shipperId' => 999999] as $field => $value) {
+            try {
+                $this->invoice([
+                    'deliveryIds' => [$dn],
+                    'date' => new \DateTimeImmutable($this->today()),
+                    $field => $value,
+                ]);
+                $this->fail("$field was accepted");
+            } catch (BadInput $e) {
+                $this->assertSame($field, $e->field());
+            }
+        }
+    }
+
+    public function testADeliveryLineGivenTwiceIsRefused(): void
+    {
+        $orderNo = $this->createOrder(['lines' => [['stockId' => '101', 'quantity' => 3.0]]]);
+        $dn = $this->deliverOrder($orderNo);
+        $deliveryLine = (int) $this->detailRows(13, $dn)[0]['id'];
+
+        try {
+            $this->invoice([
+                'deliveryIds' => [$dn],
+                'date' => new \DateTimeImmutable($this->today()),
+                'lines' => [
+                    ['deliveryLineId' => $deliveryLine, 'quantity' => 1.0],
+                    ['deliveryLineId' => $deliveryLine, 'quantity' => 2.0],
+                ],
+            ]);
+            $this->fail('a delivery line given twice was accepted');
+        } catch (BadInput $e) {
+            $this->assertSame('lines.1.deliveryLineId', $e->field());
+            $this->assertStringContainsString('twice', $e->getMessage());
+        }
+    }
+
+    public function testTermsCannotBeChosenWhereThePointOfSaleAllowsNeither(): void
+    {
+        $orderNo = $this->createOrder();
+        $dn = $this->deliverOrder($orderNo);
+        $this->pdo()->exec('UPDATE 0_sales_pos SET cash_sale = 0, credit_sale = 0 WHERE id = 1');
+        try {
+            $this->invoice([
+                'deliveryIds' => [$dn],
+                'date' => new \DateTimeImmutable($this->today()),
+                'paymentTermsId' => 1,
+            ]);
+            $this->fail('terms were chosen at a point of sale that allows neither');
+        } catch (BadInput $e) {
+            $this->assertSame('paymentTermsId', $e->field());
+            $this->assertStringContainsString('point of sale', $e->getMessage());
+        } finally {
+            $this->pdo()->exec('UPDATE 0_sales_pos SET cash_sale = 1, credit_sale = 1 WHERE id = 1');
+        }
+    }
+
+    public function testAOneStepInvoiceRefusedAtItsWriteLeavesNothingBehind(): void
+    {
+        // The invoice's write returns -1 (reference in use) after the 'auto'
+        // delivery was written in the same transaction: both go.
+        $taken = $this->transRow(10, $this->invoice([
+            'deliveryIds' => [$this->deliverOrder($this->createOrder())],
+            'date' => new \DateTimeImmutable($this->today()),
+        ]))['reference'];
+        $orderNo = $this->createOrder(['lines' => [['stockId' => '101', 'quantity' => 2.0]]]);
+        $version = (int) $this->orderRow($orderNo)['version'];
+        $count = function (): int {
+            return (int) $this->pdo()->query('SELECT COUNT(*) FROM 0_debtor_trans')->fetchColumn();
+        };
+        $before = $count();
+
+        try {
+            $this->invoice([
+                'orderId' => $orderNo,
+                'orderVersion' => $version,
+                'date' => new \DateTimeImmutable($this->today()),
+                'reference' => $taken,
+            ]);
+            $this->fail('a taken reference was accepted');
+        } catch (BadInput $e) {
+            $this->assertSame('reference', $e->field());
+        }
+
+        $this->assertSame($before, $count(), 'neither the delivery nor the invoice is left');
+        $this->assertEquals(0, $this->lineRows($orderNo)[0]['qty_sent']);
+        $this->assertSame($version, (int) $this->orderRow($orderNo)['version']);
+        $this->assertSame('1', (string) $this->pdo()->query(
+            'SELECT IS_FREE_LOCK(' . $this->pdo()->quote(DocumentLock::name()) . ')'
+        )->fetchColumn(), 'the document lock is released');
+    }
+
+    public function testVoidingAOneStepInvoiceWaitsForTheOrderRow(): void
+    {
+        // Checkpoint B M-1: the void restores the order's quantities, so it holds the
+        // order row as an order update does.
+        $orderNo = $this->createOrder(['lines' => [['stockId' => '101', 'quantity' => 2.0]]]);
+        $invoiceNo = $this->invoice([
+            'orderId' => $orderNo,
+            'orderVersion' => (int) $this->orderRow($orderNo)['version'],
+            'date' => new \DateTimeImmutable($this->today()),
+        ]);
+
+        $this->assertWaitsForTheOrderRow($orderNo, function () use ($invoiceNo): void {
+            $this->voidInvoice($invoiceNo);
+        });
+        $this->assertFalse($this->isVoided(10, $invoiceNo));
+        $this->assertEquals(2, $this->lineRows($orderNo)[0]['qty_sent']);
+    }
+
     public function testTwoDeliveriesOfOneBranchAreInvoicedTogetherWithTheirFreightSummed(): void
     {
         $orderNo = $this->createOrder(['lines' => [['stockId' => '101', 'quantity' => 2.0]], 'freight' => 0.0]);

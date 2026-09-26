@@ -130,7 +130,7 @@ class DeliveryService
     {
         FaIncludes::billing();
         $row = db_fetch(db_query(
-            'SELECT trans_no FROM ' . TB_PREF . 'debtor_trans WHERE type = ' . ST_CUSTDELIVERY
+            'SELECT trans_no, order_ FROM ' . TB_PREF . 'debtor_trans WHERE type = ' . ST_CUSTDELIVERY
             . ' AND trans_no = ' . db_escape($id) . ' FOR UPDATE',
             'could not lock the delivery'
         ));
@@ -146,6 +146,10 @@ class DeliveryService
             $message = 'This delivery has been invoiced: void the invoice first.';
             throw new FaRejected($message, [$message]);
         }
+        // The void gives the order its quantities back: hold the order row, as an order
+        // update does, so an update cannot write back the quantities it read before
+        // (Checkpoint B M-1).
+        OrderLock::lockIfPresent((int) $row['order_']);
         $this->voider->void(ST_CUSTDELIVERY, $id, self::VOID_MEMO);
     }
 

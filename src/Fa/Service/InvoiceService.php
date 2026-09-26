@@ -16,8 +16,8 @@ use FA\GraphQL\Fa\DateConversion;
  * lock wraps the transaction (spec section 2.1).
  *
  * Ported from upstream FrontAccounting master: sales/customer_invoice.php
- * check_quantities() (:197-224), set_delivery_shipping_sum() (:230-241),
- * copy_to_cart() (:245-268), check_data() (:290-352), the process block (:355-373);
+ * check_quantities() (:197-224), copy_to_cart() (:245-268), check_data() (:290-352),
+ * the process block (:355-373), the freight default (:589-608, see applyFreight());
  * sales/includes/db/sales_order_db.inc get_invoice_duedate() (:388-407).
  */
 class InvoiceService
@@ -133,6 +133,10 @@ class InvoiceService
         if (!get_voided_entry(ST_SALESINVOICE, $id) && abs((float) $row['alloc']) > 0.0001) {
             throw new FaRejected(self::ALLOCATED, [self::ALLOCATED]);
         }
+        // A one-step invoice's void voids its 'auto' delivery, which gives the order
+        // its quantities back: hold the order row, as an order update does, so an
+        // update cannot write back the quantities it read before (Checkpoint B M-1).
+        OrderLock::lockIfPresent((int) $row['order_']);
         $this->voider->void(ST_SALESINVOICE, $id, self::VOID_MEMO);
     }
 
@@ -249,9 +253,18 @@ class InvoiceService
 
     /**
      * copy_to_cart() :258-261 and check_data() :317-327: freight numeric and not
-     * negative; its default is the deliveries' freight summed
-     * (set_delivery_shipping_sum(), :230-241) — read_sales_trans() alone would take the
-     * first delivery's. The shipper likewise.
+     * negative. The shipper likewise.
+     *
+     * The default is our own rule (Checkpoint B I-1): each delivery adds its freight
+     * only while none of its lines has been invoiced, so a delivery invoiced in parts
+     * charges its freight once. The page pre-fills the first delivery's freight
+     * (read_sales_trans()), or for a batch the deliveries' sum when the company's
+     * accumulate_shipping is on (set_delivery_shipping_sum(), :230-241, called at
+     * :606-608), and a person corrects it; when the field is empty it charges nothing
+     * once any line has been invoiced (any_already_delivered(), :589-599). An API
+     * default nobody sees must not bill freight twice, nor drop a batch's other
+     * deliveries' freight, so it sums per delivery and skips the ones already billed.
+     * A client charging freight again gives `freight`.
      *
      * @param array<string, mixed> $input
      * @param int[] $deliveryIds
@@ -275,9 +288,26 @@ class InvoiceService
         }
         $sum = 0.0;
         foreach ($deliveryIds as $id) {
-            $sum += (float) self::document(ST_CUSTDELIVERY, $id, false)['ov_freight'];
+            if (!self::anyInvoiced($id)) {
+                $sum += (float) self::document(ST_CUSTDELIVERY, $id, false)['ov_freight'];
+            }
         }
         $cart->freight_cost = $sum;
+    }
+
+    /**
+     * Whether any line of the delivery has been invoiced (qty_done), read in the
+     * invoice's transaction, under the document lock.
+     */
+    private static function anyInvoiced(int $deliveryNo): bool
+    {
+        $row = db_fetch_row(db_query(
+            'SELECT COALESCE(SUM(qty_done), 0) FROM ' . TB_PREF . 'debtor_trans_details WHERE debtor_trans_type = '
+            . ST_CUSTDELIVERY . ' AND debtor_trans_no = ' . db_escape($deliveryNo),
+            'could not read the delivery lines'
+        ));
+
+        return (float) $row[0] > 0;
     }
 
     /**
@@ -289,9 +319,14 @@ class InvoiceService
      */
     private function applyQuantities(\Cart $cart, array $lines): void
     {
+        $seen = [];
         foreach ($lines as $index => $given) {
             $field = "lines.$index";
             $deliveryLineId = IntKey::parse($given['deliveryLineId'] ?? null, "$field.deliveryLineId");
+            if (isset($seen[$deliveryLineId])) {
+                throw new BadInput("Delivery line $deliveryLineId is given twice.", "$field.deliveryLineId");
+            }
+            $seen[$deliveryLineId] = true;
             $quantity = (float) ($given['quantity'] ?? 0);
             $found = false;
             foreach ($cart->line_items as $line) {
@@ -345,7 +380,7 @@ class InvoiceService
     private static function document(int $type, int $transNo, bool $forUpdate): ?array
     {
         $row = db_fetch(db_query(
-            'SELECT debtor_no, branch_code, ov_freight, alloc FROM ' . TB_PREF . 'debtor_trans WHERE type = '
+            'SELECT debtor_no, branch_code, order_, ov_freight, alloc FROM ' . TB_PREF . 'debtor_trans WHERE type = '
             . (int) $type . ' AND trans_no = ' . db_escape($transNo) . ($forUpdate ? ' FOR UPDATE' : ''),
             'could not read the document'
         ));

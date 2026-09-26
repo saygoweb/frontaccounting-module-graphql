@@ -143,6 +143,22 @@ class DeliveryCreateTest extends BillingTestCase
         }
     }
 
+    public function testAnOrderAtTheEditLimitIsRefused(): void
+    {
+        $order = $this->createOrder();
+        $this->pdo()->prepare('UPDATE 0_sales_orders SET version = 255 WHERE order_no = ? AND trans_type = 30')
+            ->execute([$order]);
+
+        try {
+            $this->createDelivery($order, ['orderVersion' => 255]);
+            $this->fail('a delivery took the order past its edit limit');
+        } catch (FaRejected $e) {
+            $this->assertSame(SalesOrderService::EDIT_LIMIT, $e->getMessage());
+        }
+        $this->assertSame(255, (int) $this->orderRow($order)['version']);
+        $this->assertEqualsWithDelta(0.0, (float) $this->lineRows($order)[0]['qty_sent'], 0.0001);
+    }
+
     public function testAnOrderThatDoesNotExistIsNotFound(): void
     {
         $this->expectException(NotFound::class);

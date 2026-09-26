@@ -146,11 +146,18 @@ invoiced quantities.
   invoice voids its delivery too (`void_sales_invoice()`,
   `sales_invoice_db.inc` :249-256: one parent delivery whose reference is `auto`),
   and the order is back as it was.
-- **Default freight is the deliveries' `ov_freight` summed**, the intent of the
-  page's `set_delivery_shipping_sum()` (`customer_invoice.php` :230-241);
-  `read_sales_trans()` alone would take the first delivery's. A given `freight`
-  (not negative) wins on the deliveries path; on the one-step path it is the
-  delivery's freight, and so the invoice's.
+- **Default freight: each delivery adds its `ov_freight` only while none of its
+  lines has been invoiced** (`SUM(qty_done) = 0`, read in the invoice's
+  transaction), so a delivery invoiced in parts charges its freight once
+  (Checkpoint B I-1). This rule is our own. The page pre-fills the first
+  delivery's freight (`read_sales_trans()`), or for a batch the sum when the
+  company's `accumulate_shipping` is on (`set_delivery_shipping_sum()`,
+  `customer_invoice.php` :230-241, called at :606-608); when its field is empty it
+  charges nothing once any line has been invoiced (`any_already_delivered()`,
+  :589-599); and a person sees and corrects the value. An API default nobody sees
+  sums per delivery, whatever `accumulate_shipping` says, and skips a delivery
+  already partly billed. A given `freight` (not negative) wins on the deliveries
+  path; on the one-step path it is the delivery's freight, and so the invoice's.
 - **Per-line quantities are a hand-written input**,
   `lines: [InvoiceLineQuantityInput!]` with `InvoiceLineQuantityInput {
   deliveryLineId: ID!, quantity: Float! }`: no generated Input fits "which

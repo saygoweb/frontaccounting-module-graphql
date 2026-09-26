@@ -56,7 +56,7 @@ class InvoiceModel extends Model
     /** @var float Tax on the items (ov_gst) */
     public $tax = 0.0;
 
-    /** @var float Default: the deliveries' freight */
+    /** @var float Default: the freight of those deliveries none of whose lines was invoiced before */
     public $freight = 0.0;
 
     /** @var float Tax on the freight */

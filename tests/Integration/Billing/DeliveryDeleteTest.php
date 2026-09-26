@@ -43,6 +43,20 @@ class DeliveryDeleteTest extends BillingTestCase
         $this->assertEqualsWithDelta(2.0, (float) $this->lineRows($order)[0]['qty_sent'], 0.0001);
     }
 
+    public function testVoidingWaitsForTheOrderRow(): void
+    {
+        // Checkpoint B M-1: the void restores the order's quantities, so it holds the
+        // order row as an order update does.
+        $order = $this->createOrder(['lines' => [['stockId' => '101', 'quantity' => 2.0]]]);
+        $dn = $this->createDelivery($order);
+
+        $this->assertWaitsForTheOrderRow($order, function () use ($dn): void {
+            $this->void($dn);
+        });
+        $this->assertFalse((new Voider())->isVoided(13, $dn));
+        $this->assertEqualsWithDelta(2.0, (float) $this->lineRows($order)[0]['qty_sent'], 0.0001);
+    }
+
     public function testVoidingTwiceIsRefused(): void
     {
         $order = $this->createOrder();

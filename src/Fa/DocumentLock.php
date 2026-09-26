@@ -36,7 +36,22 @@ final class DocumentLock
         try {
             return $work();
         } finally {
+            self::release($name);
+        }
+    }
+
+    /**
+     * A failing RELEASE_LOCK (the connection broke) must not hide the work's own error,
+     * nor fail a write that committed: the lock goes with the connection either way
+     * (Release 3 Checkpoint B M-5). Logged, as FaTransaction::cancel() swallows a
+     * failing ROLLBACK.
+     */
+    private static function release(string $name): void
+    {
+        try {
             db_query("SELECT RELEASE_LOCK($name)", 'could not unlock');
+        } catch (\Throwable $e) {
+            error_log('graphql: could not release the document lock: ' . $e->getMessage());
         }
     }
 }

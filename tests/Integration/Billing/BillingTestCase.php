@@ -10,6 +10,7 @@ use FA\GraphQL\Tests\Integration\SalesOrder\SalesOrderTestCase;
 use FA\GraphQL\Tests\Support\AssertsGlBalanced;
 use FA\GraphQL\Tests\Support\FaBillingRows;
 use FA\GraphQL\Tests\Support\FaTestRows;
+use PHPUnit\Framework\AssertionFailedError;
 
 /**
  * Billing tests against FrontAccounting in-process, signed in as apitest. Orders come
@@ -114,6 +115,32 @@ abstract class BillingTestCase extends SalesOrderTestCase
                 return $value === null ? null : (string) $value;
             }, $row);
         }, $statement->fetchAll(\PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * $write must wait for the order's row lock (Checkpoint B M-1): another
+     * connection holds the row FOR UPDATE, FrontAccounting's connection waits at most
+     * a second, and the write fails with MariaDB's lock wait timeout (1205). A write
+     * that never asks for the row finishes instead.
+     */
+    protected function assertWaitsForTheOrderRow(int $orderNo, callable $write): void
+    {
+        $other = FaTestRows::connect();
+        $other->beginTransaction();
+        $other->prepare('SELECT version FROM 0_sales_orders WHERE order_no = ? AND trans_type = 30 FOR UPDATE')
+            ->execute([$orderNo]);
+        db_query('SET SESSION innodb_lock_wait_timeout = 1', 'could not set the lock wait timeout');
+        try {
+            $write();
+            $this->fail('the write did not wait for the order row');
+        } catch (AssertionFailedError $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            $this->assertStringContainsString('1205', $e->getMessage(), 'a lock wait timeout');
+        } finally {
+            $other->rollBack();
+            db_query('SET SESSION innodb_lock_wait_timeout = DEFAULT', 'could not reset the lock wait timeout');
+        }
     }
 
     /**

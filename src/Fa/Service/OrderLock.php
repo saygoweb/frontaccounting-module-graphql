@@ -35,9 +35,34 @@ final class OrderLock
     }
 
     /**
+     * The row lock alone, for a void that gives an order its quantities back
+     * (Release 3 Checkpoint B M-1). A document without an order, or whose order is
+     * gone, has nothing to lock.
+     */
+    public static function lockIfPresent(int $orderId): void
+    {
+        if ($orderId > 0) {
+            self::row($orderId);
+        }
+    }
+
+    /**
      * @return int the order's version
      */
     public static function lock(int $orderId): int
+    {
+        $row = self::row($orderId);
+        if ($row === null) {
+            throw new NotFound("There is no sales order $orderId.");
+        }
+
+        return (int) $row['version'];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function row(int $orderId): ?array
     {
         $result = db_query(
             'SELECT version FROM ' . TB_PREF . 'sales_orders WHERE order_no = ' . db_escape($orderId)
@@ -45,10 +70,7 @@ final class OrderLock
             'could not lock the sales order'
         );
         $row = db_fetch($result);
-        if (!$row) {
-            throw new NotFound("There is no sales order $orderId.");
-        }
 
-        return (int) $row['version'];
+        return $row ?: null;
     }
 }
