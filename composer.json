@@ -20,7 +20,7 @@
         "lcobucci/jwt": "^4.0",
         "php-di/php-di": "^6.0",
         "saygoweb/anorm": "^3.2.1",
-        "saygoweb/anorm-graphql": "^0.2.1",
+        "saygoweb/anorm-graphql": "^0.3",
         "slim/psr7": "^1.6",
         "slim/slim": "^4.11",
         "webonyx/graphql-php": "^15.32.3"
@@ -48,8 +48,11 @@
     },
     "scripts": {
         "test": "phpunit -c phpunit.xml",
-        "lint": "find . -name vendor -prune -o -type f -name '*.php' -print0 | xargs -0 -n1 php -l",
-        "cs:check": "phpcs",
+        "lint": "find . -name vendor -prune -o -type f \\( -name '*.php' -o -path ./bin/fa-report \\) -print0 | xargs -0 -n1 php -l",
+        "cs:check": [
+            "phpcs",
+            "phpcs --stdin-path=bin/fa-report.php - < bin/fa-report"
+        ],
         "cs:fix": "phpcbf",
         "analyze": "phpstan analyse --no-progress --memory-limit=512M",
         "generate": "bin/generate",
@@ -65,8 +68,8 @@
     },
     "scripts-descriptions": {
         "test": "Run the PHPUnit suite. The http tests need the module served from a FrontAccounting install - docker/fa-graphql test does that.",
-        "lint": "php -l over every PHP file in the module.",
-        "cs:check": "Check src/ and tests/ against PSR-12 (phpcs.xml).",
+        "lint": "php -l over every PHP file in the module, bin/fa-report included.",
+        "cs:check": "Check src/, tests/ and bin/fa-report against PSR-12 (phpcs.xml).",
         "cs:fix": "Fix what phpcbf can fix automatically.",
         "analyze": "Run PHPStan over src/ (phpstan.neon).",
         "generate": "anorm-graphql make with this module's options (bin/generate). Runs on the host too: bin/generate.",

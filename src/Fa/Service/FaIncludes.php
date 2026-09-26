@@ -45,4 +45,32 @@ final class FaIncludes
             Bootstrap::includeFa($file);
         }
     }
+
+    /**
+     * Deliveries, invoices, payments, allocations and voids beyond orders():
+     * sales/customer_payments.php:19-24, sales/allocations/customer_allocate.php:17-21,
+     * admin/void_transaction.php:18-22. Listed whether or not sales_db.inc already
+     * brings them (includeFa is include_once): payment_db.inc and custalloc_db.inc
+     * (payments, allocations — Task 5), gl_db.inc (postings), allocations_db.inc and
+     * allocation_cart.inc (the allocation class), voiding_db.inc and
+     * audit_trail_db.inc (voids).
+     */
+    public static function billing(): void
+    {
+        self::orders();
+        foreach (
+            [
+            'sales/includes/sales_db.inc',
+            'sales/includes/db/payment_db.inc',
+            'sales/includes/db/custalloc_db.inc',
+            'gl/includes/gl_db.inc',
+            'includes/db/allocations_db.inc',
+            'includes/ui/allocation_cart.inc',
+            'admin/db/voiding_db.inc',
+            'includes/db/audit_trail_db.inc',
+            ] as $file
+        ) {
+            Bootstrap::includeFa($file);
+        }
+    }
 }

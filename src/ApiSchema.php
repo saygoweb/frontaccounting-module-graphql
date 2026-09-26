@@ -5,8 +5,12 @@ namespace FA\GraphQL;
 use Anorm\GraphQL\GraphQLUtils;
 use Anorm\GraphQL\Type\MangoInput;
 use DI\Container;
+use FA\GraphQL\Auth\Guard;
+use FA\GraphQL\Fa\Service\InvoiceMailer;
+use FA\GraphQL\Type\Allocation\AllocationType;
 use FA\GraphQL\Type\Auth\AuthMutations;
 use FA\GraphQL\Type\Auth\AuthPayloadType;
+use FA\GraphQL\Type\BankAccount\BankAccountType;
 use FA\GraphQL\Type\Branch\BranchCreateInput;
 use FA\GraphQL\Type\Branch\BranchType;
 use FA\GraphQL\Type\Branch\BranchUpdateInput;
@@ -15,9 +19,19 @@ use FA\GraphQL\Type\Contact\ContactType;
 use FA\GraphQL\Type\Contact\ContactUpdateInput;
 use FA\GraphQL\Type\CreditStatus\CreditStatusType;
 use FA\GraphQL\Type\Currency\CurrencyType;
+use FA\GraphQL\Type\CustomerPayment\CustomerPaymentCreateInput;
+use FA\GraphQL\Type\CustomerPayment\CustomerPaymentType;
+use FA\GraphQL\Type\CustomerPayment\CustomerPaymentUpdateInput;
 use FA\GraphQL\Type\Customer\CustomerCreateInput;
 use FA\GraphQL\Type\Customer\CustomerType;
 use FA\GraphQL\Type\Customer\CustomerUpdateInput;
+use FA\GraphQL\Type\DeliveryLine\DeliveryLineType;
+use FA\GraphQL\Type\Delivery\DeliveryCreateInput;
+use FA\GraphQL\Type\Delivery\DeliveryType;
+use FA\GraphQL\Type\InvoiceLine\InvoiceLineType;
+use FA\GraphQL\Type\Invoice\InvoiceCreateInput;
+use FA\GraphQL\Type\Invoice\InvoiceEmailResultType;
+use FA\GraphQL\Type\Invoice\InvoiceType;
 use FA\GraphQL\Type\Location\LocationType;
 use FA\GraphQL\Type\PaymentTerms\PaymentTermsType;
 use FA\GraphQL\Type\SalesArea\SalesAreaType;
@@ -58,6 +72,10 @@ class ApiSchema extends Schema
             'query' => new ObjectType([
                 'name' => 'Query',
                 'fields' => [
+                    // anorm-graphql
+                    GraphQLUtils::createListField('allocationList', $this->type(AllocationType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
                     'apiVersion' => [
                         'type' => Type::nonNull(Type::string()),
                         'description' => 'The version of the GraphQL module. Needs no token.',
@@ -65,6 +83,10 @@ class ApiSchema extends Schema
                             return self::VERSION;
                         },
                     ],
+                    // anorm-graphql
+                    GraphQLUtils::createListField('bankAccountList', $this->type(BankAccountType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
                     // anorm-graphql
                     GraphQLUtils::createListField('branchList', $this->type(BranchType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
@@ -87,6 +109,34 @@ class ApiSchema extends Schema
                         ->build(),
                     // anorm-graphql
                     GraphQLUtils::createListField('customerList', $this->type(CustomerType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'customerPaymentList',
+                        $this->type(CustomerPaymentType::class),
+                        'resolveList'
+                    )
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'deliveryLineList',
+                        $this->type(DeliveryLineType::class),
+                        'resolveList'
+                    )
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('deliveryList', $this->type(DeliveryType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('invoiceLineList', $this->type(InvoiceLineType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('invoiceList', $this->type(InvoiceType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
                     // anorm-graphql
@@ -197,12 +247,80 @@ class ApiSchema extends Schema
                         ->addArgument('id', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
                         ->build(),
                     // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'customerPaymentCreate',
+                        $this->type(CustomerPaymentType::class),
+                        'resolveCreate'
+                    )
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(CustomerPaymentCreateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'customerPaymentDelete',
+                        $this->type(CustomerPaymentType::class),
+                        'resolveDelete'
+                    )
+                        ->addArgument('id', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'customerPaymentUpdate',
+                        $this->type(CustomerPaymentType::class),
+                        'resolveUpdate'
+                    )
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(CustomerPaymentUpdateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
                     GraphQLUtils::createListField('customerUpdate', $this->type(CustomerType::class), 'resolveUpdate')
                         ->addArgument(
                             'input',
                             Type::nonNull(Type::listOf(Type::nonNull($this->type(CustomerUpdateInput::class))))
                         )
                         ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('deliveryCreate', $this->type(DeliveryType::class), 'resolveCreate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(DeliveryCreateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('deliveryDelete', $this->type(DeliveryType::class), 'resolveDelete')
+                        ->addArgument('id', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('invoiceCreate', $this->type(InvoiceType::class), 'resolveCreate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(InvoiceCreateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('invoiceDelete', $this->type(InvoiceType::class), 'resolveDelete')
+                        ->addArgument('id', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
+                        ->build(),
+                    'invoiceEmail' => [
+                        'type' => Type::nonNull(
+                            Type::listOf(Type::nonNull($this->type(InvoiceEmailResultType::class)))
+                        ),
+                        'description' => "Email invoices through FrontAccounting's invoice report, to each "
+                            . "customer's invoice (else general) contact. Runs after any writes in the same "
+                            . 'request have committed.',
+                        'args' => [
+                            'id' => ['type' => Type::nonNull(Type::listOf(Type::nonNull(Type::id())))],
+                        ],
+                        'resolve' => function ($root, array $args) {
+                            Guard::require('SA_SALESTRANSVIEW');
+                            Guard::require('SA_SALESINVOICE');
+                            return $this->type(InvoiceMailer::class)->send($args['id']);
+                        },
+                    ],
                     'login' => [
                         'type' => Type::nonNull($this->type(AuthPayloadType::class)),
                         'description' => 'Sign in as a FrontAccounting user. Needs no token.',

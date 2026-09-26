@@ -60,9 +60,11 @@ class ApiSchemaTest extends TestCase
         $query = array_keys($schema->getQueryType()->getFields());
         sort($query);
         $expected = [
-            'apiVersion', 'branchList', 'contactList', 'creditStatusList', 'currencyList', 'customerList',
-            'locationList', 'me', 'paymentTermsList', 'salesAreaList', 'salesOrderLineList', 'salesOrderList',
-            'salesTypeList', 'salesmanList', 'shipperList', 'stockItemList', 'taxGroupList',
+            'allocationList', 'apiVersion', 'bankAccountList', 'branchList', 'contactList', 'creditStatusList',
+            'currencyList', 'customerList', 'customerPaymentList', 'deliveryLineList', 'deliveryList',
+            'invoiceLineList', 'invoiceList', 'locationList',
+            'me', 'paymentTermsList', 'salesAreaList', 'salesOrderLineList', 'salesOrderList', 'salesTypeList',
+            'salesmanList', 'shipperList', 'stockItemList', 'taxGroupList',
         ];
         sort($expected);
 
@@ -70,8 +72,11 @@ class ApiSchemaTest extends TestCase
         $this->assertSame(
             [
                 'branchCreate', 'branchDelete', 'branchUpdate', 'contactCreate', 'contactDelete', 'contactUpdate',
-                'customerCreate', 'customerDelete', 'customerUpdate', 'login', 'salesOrderCreate', 'salesOrderDelete',
-                'salesOrderUpdate', 'tokenRefresh', 'tokenRevoke',
+                'customerCreate', 'customerDelete', 'customerPaymentCreate', 'customerPaymentDelete',
+                'customerPaymentUpdate', 'customerUpdate', 'deliveryCreate', 'deliveryDelete',
+                'invoiceCreate', 'invoiceDelete', 'invoiceEmail', 'login', 'salesOrderCreate', 'salesOrderDelete',
+                'salesOrderUpdate',
+                'tokenRefresh', 'tokenRevoke',
             ],
             array_keys($schema->getMutationType()->getFields())
         );

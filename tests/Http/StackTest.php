@@ -100,6 +100,8 @@ class StackTest extends TestCase
             'sql/update_1.0.sql',
             'vendor/autoload.php',
             'hooks.php',
+            'bin/fa-report',
+            'bin/generate',
         ];
         foreach ($paths as $path) {
             $this->assertIs403($base . $path, $path);

@@ -12,6 +12,7 @@ parameters:
         - app.php
         - container.php
         - index.php
+        - bin/fa-report
 
     # FrontAccounting's own code, byte for byte (it still calls
     # get_magic_quotes_gpc() behind a PHP < 5.4 check). FrontAccounting is
@@ -52,3 +53,15 @@ parameters:
         - ../../inventory/includes/db/items_locations_db.inc
         - ../../admin/db/fiscalyears_db.inc
         - ../../admin/db/shipping_db.inc
+        # Voider: void_transaction, get_voided_entry (admin/ is not under
+        # scanDirectories' includes/).
+        - ../../admin/db/voiding_db.inc
+        # DeliveryService: adjust_shipping_charge (sales_delivery_db.inc).
+        - ../../sales/includes/db/sales_delivery_db.inc
+        # CustomerPaymentService, CustomerPaymentType: write_customer_payment,
+        # get_cust_bank_charge (payment_db.inc); get_bank_account,
+        # get_bank_charge_account (gl_db_bank_accounts.inc); get_gl_account
+        # (gl_db_accounts.inc).
+        - ../../sales/includes/db/payment_db.inc
+        - ../../gl/includes/db/gl_db_bank_accounts.inc
+        - ../../gl/includes/db/gl_db_accounts.inc
