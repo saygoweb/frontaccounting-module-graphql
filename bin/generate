@@ -20,10 +20,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # Entities generated without mutations, comma-separated.
-READONLY="SalesType,PaymentTerms,TaxGroup,SalesArea,Salesman,Location,Shipper,CreditStatus,Currency,StockItem"
+READONLY="SalesType,PaymentTerms,TaxGroup,SalesArea,Salesman,Location,Shipper,CreditStatus,Currency,StockItem,SalesOrderLine"
 # Entities that get only their Input(s), to nest in another entity's input: no
 # Type mutations and no ApiSchema entries of their own. Comma-separated.
-INPUT_ONLY=""
+INPUT_ONLY="SalesOrderLine"
 
 if [ -n "${ANORM_GRAPHQL_CHECKOUT:-}" ]; then
     GENERATOR=(php -d "auto_prepend_file=$ROOT/vendor/autoload.php" "$ANORM_GRAPHQL_CHECKOUT/bin/anorm-graphql.php")

@@ -49,8 +49,9 @@ class ApiSchemaTest extends TestCase
     }
 
     /**
-     * Foundation spec §3.1 plus Release 2's lookups (Release 2 spec §4.2): exactly
-     * these root fields and nothing else. A new root field is a spec change, not a
+     * Foundation spec §3.1 plus Release 2's lookups (Release 2 spec §4.2), plus
+     * Release 2's generated entities (Release 2 spec section 4): exactly these root
+     * fields and nothing else. A new root field is a spec change, not a
      * drive-by. Order is testQueryAndMutationFieldsAreAlphabetical's business.
      */
     public function testTheRootFieldsAreExactlyTheSpecsAndNothingElse(): void
@@ -60,8 +61,8 @@ class ApiSchemaTest extends TestCase
         sort($query);
         $expected = [
             'apiVersion', 'branchList', 'contactList', 'creditStatusList', 'currencyList', 'customerList',
-            'locationList', 'me', 'paymentTermsList', 'salesAreaList', 'salesTypeList', 'salesmanList',
-            'shipperList', 'stockItemList', 'taxGroupList',
+            'locationList', 'me', 'paymentTermsList', 'salesAreaList', 'salesOrderLineList', 'salesOrderList',
+            'salesTypeList', 'salesmanList', 'shipperList', 'stockItemList', 'taxGroupList',
         ];
         sort($expected);
 
@@ -69,7 +70,8 @@ class ApiSchemaTest extends TestCase
         $this->assertSame(
             [
                 'branchCreate', 'branchDelete', 'branchUpdate', 'contactCreate', 'contactDelete', 'contactUpdate',
-                'customerCreate', 'customerDelete', 'customerUpdate', 'login', 'tokenRefresh', 'tokenRevoke',
+                'customerCreate', 'customerDelete', 'customerUpdate', 'login', 'salesOrderCreate', 'salesOrderDelete',
+                'salesOrderUpdate', 'tokenRefresh', 'tokenRevoke',
             ],
             array_keys($schema->getMutationType()->getFields())
         );

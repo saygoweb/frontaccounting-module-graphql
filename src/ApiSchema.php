@@ -21,6 +21,10 @@ use FA\GraphQL\Type\Customer\CustomerUpdateInput;
 use FA\GraphQL\Type\Location\LocationType;
 use FA\GraphQL\Type\PaymentTerms\PaymentTermsType;
 use FA\GraphQL\Type\SalesArea\SalesAreaType;
+use FA\GraphQL\Type\SalesOrderLine\SalesOrderLineType;
+use FA\GraphQL\Type\SalesOrder\SalesOrderCreateInput;
+use FA\GraphQL\Type\SalesOrder\SalesOrderType;
+use FA\GraphQL\Type\SalesOrder\SalesOrderUpdateInput;
 use FA\GraphQL\Type\SalesType\SalesTypeType;
 use FA\GraphQL\Type\Salesman\SalesmanType;
 use FA\GraphQL\Type\Shipper\ShipperType;
@@ -106,6 +110,18 @@ class ApiSchema extends Schema
                         ->build(),
                     // anorm-graphql
                     GraphQLUtils::createListField('salesAreaList', $this->type(SalesAreaType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'salesOrderLineList',
+                        $this->type(SalesOrderLineType::class),
+                        'resolveList'
+                    )
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('salesOrderList', $this->type(SalesOrderType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
                     // anorm-graphql
@@ -199,6 +215,36 @@ class ApiSchema extends Schema
                             return $this->type(AuthMutations::class)->resolveLogin($root, $args);
                         },
                     ],
+                    // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'salesOrderCreate',
+                        $this->type(SalesOrderType::class),
+                        'resolveCreate'
+                    )
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(SalesOrderCreateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'salesOrderDelete',
+                        $this->type(SalesOrderType::class),
+                        'resolveDelete'
+                    )
+                        ->addArgument('id', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'salesOrderUpdate',
+                        $this->type(SalesOrderType::class),
+                        'resolveUpdate'
+                    )
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(SalesOrderUpdateInput::class))))
+                        )
+                        ->build(),
                     'tokenRefresh' => [
                         'type' => Type::nonNull($this->type(AuthPayloadType::class)),
                         'description' => 'Exchange a refresh token for a new pair. Needs no token.',
