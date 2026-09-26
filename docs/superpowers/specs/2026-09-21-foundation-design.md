@@ -685,6 +685,7 @@ InnoDB.
 produces `SalesTypeTypeBase`, `SalesTypeType`, the `salesTypeList(query:
 MangoInput)` entry and `SalesTypeTypeTest`. `SalesTypeType::areas()` is `['list' =>
 'SA_SALESTYPES']`. The seed role gains `SA_SALESTYPES`.
+*(revised by Release 2: `SA_SALESORDER`, Release 2 spec §4.2)*
 
 ## 5. Authorisation
 
@@ -866,6 +867,7 @@ the rows they create; the only table written is `graphql_refresh_token`.
 `tests/data/seed.sql`, loaded after the dataset by `docker/fa-graphql db load`,
 adds a role holding `SA_GRAPHQL` plus the sales areas (including `SA_SALESTYPES`), a user `apitest` in it, and a
 user `noapi` in a role without `SA_GRAPHQL`. Both with password `password`.
+*(revised by Release 2: `SA_SALESORDER`, Release 2 spec §4.2)*
 
 Gates: `composer lint`, `cs:check` (PSR-12), `analyze` (PHPStan level 5, with
 `../../includes` scanned for FrontAccounting's symbols), `test`. `.github/workflows/
@@ -930,5 +932,6 @@ Each step leaves `docker/fa-graphql ci` green.
     mutations, `me`.
 11. The `SalesType` pilot: model, generation, `areas()`, the scaffolded generated
     `TestCase`, `SA_SALESTYPES` in the seed.
+    *(revised by Release 2: `SA_SALESORDER`, Release 2 spec §4.2)*
 12. The `http` suite end to end; the CI workflow; README: obtaining a token and
     calling the API from PHP with Guzzle, and generating Types.

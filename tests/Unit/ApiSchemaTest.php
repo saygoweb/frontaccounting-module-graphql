@@ -49,17 +49,23 @@ class ApiSchemaTest extends TestCase
     }
 
     /**
-     * Spec §3.1: exactly these root fields and nothing else, plus the pilot's
-     * salesTypeList (§4.5). A new root field is a spec change, not a drive-by.
+     * Foundation spec §3.1 plus Release 2's lookups (Release 2 spec §4.2): exactly
+     * these root fields and nothing else. A new root field is a spec change, not a
+     * drive-by. Order is testQueryAndMutationFieldsAreAlphabetical's business.
      */
     public function testTheRootFieldsAreExactlyTheSpecsAndNothingElse(): void
     {
         $schema = $this->schema();
+        $query = array_keys($schema->getQueryType()->getFields());
+        sort($query);
+        $expected = [
+            'apiVersion', 'creditStatusList', 'currencyList', 'locationList', 'me',
+            'paymentTermsList', 'salesAreaList', 'salesTypeList', 'salesmanList',
+            'shipperList', 'stockItemList', 'taxGroupList',
+        ];
+        sort($expected);
 
-        $this->assertSame(
-            ['apiVersion', 'me', 'salesTypeList'],
-            array_keys($schema->getQueryType()->getFields())
-        );
+        $this->assertSame($expected, $query);
         $this->assertSame(
             ['login', 'tokenRefresh', 'tokenRevoke'],
             array_keys($schema->getMutationType()->getFields())

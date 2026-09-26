@@ -1,8 +1,8 @@
 <?php
 
-namespace FA\GraphQL\Type\SalesType;
+namespace FA\GraphQL\Type\SalesArea;
 
-use FA\GraphQL\Type\SalesType\Base\SalesTypeTypeBase;
+use FA\GraphQL\Type\SalesArea\Base\SalesAreaTypeBase;
 
 /**
  * Yours to edit: anorm-graphql writes this file once and never again.
@@ -11,12 +11,10 @@ use FA\GraphQL\Type\SalesType\Base\SalesTypeTypeBase;
  *  - authorize($verb, $model, $context)   throw to refuse 'list', 'create', 'edit' or 'delete'
  *  - beforeWrite($model, $input, $isUpdate, $context)   stamp columns before a write
  *  - newModel($context)   construct the model some other way
- *  - resolveList / resolveUpsert / resolveDelete   replace a resolver outright
+ *  - resolveList / resolveCreate / resolveUpdate / resolveDelete   replace a resolver outright
  *  - fields()   add computed fields: array_merge(parent::fields(), [...])
- *
- * authorize() is FaModelType's: it checks areas() through Guard.
  */
-class SalesTypeType extends SalesTypeTypeBase
+class SalesAreaType extends SalesAreaTypeBase
 {
     /**
      * Read-only: listing is the only verb, and it needs the area of the work the

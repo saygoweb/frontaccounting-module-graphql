@@ -25,13 +25,14 @@ SELECT 'noapi', '5f4dcc3b5aa765d61d8327deb882cf99', 'No API', 2, 'noapi@example.
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM `0_users` u WHERE u.`user_id` = 'noapi');
 
--- SA_SALESTYPES for the SalesType pilot (Task 11): section SS_SALES_C = 11 << 8 =
--- 2816, area SS_SALES_C | 1 = 2817. Role 2 may already hold them; appended only
+-- SA_SALESORDER: every lookup lists with it (Release 2 spec section 4.2), and orders
+-- are written with it. Section SS_SALES = 12 << 8 = 3072, area SS_SALES | 3 = 3075
+-- (includes/access_levels.inc). Role 2 holds them in the demo dataset; appended only
 -- when missing, so the role holds them whatever role 2 looks like.
 UPDATE `0_security_roles`
-SET `sections` = CONCAT(`sections`, ';2816')
-WHERE `role` = 'GraphQL API' AND FIND_IN_SET('2816', REPLACE(`sections`, ';', ',')) = 0;
+SET `sections` = CONCAT(`sections`, ';3072')
+WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3072', REPLACE(`sections`, ';', ',')) = 0;
 
 UPDATE `0_security_roles`
-SET `areas` = CONCAT(`areas`, ';2817')
-WHERE `role` = 'GraphQL API' AND FIND_IN_SET('2817', REPLACE(`areas`, ';', ',')) = 0;
+SET `areas` = CONCAT(`areas`, ';3075')
+WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3075', REPLACE(`areas`, ';', ',')) = 0;

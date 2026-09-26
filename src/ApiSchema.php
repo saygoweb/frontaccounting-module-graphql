@@ -7,7 +7,16 @@ use Anorm\GraphQL\Type\MangoInput;
 use DI\Container;
 use FA\GraphQL\Type\Auth\AuthMutations;
 use FA\GraphQL\Type\Auth\AuthPayloadType;
+use FA\GraphQL\Type\CreditStatus\CreditStatusType;
+use FA\GraphQL\Type\Currency\CurrencyType;
+use FA\GraphQL\Type\Location\LocationType;
+use FA\GraphQL\Type\PaymentTerms\PaymentTermsType;
+use FA\GraphQL\Type\SalesArea\SalesAreaType;
 use FA\GraphQL\Type\SalesType\SalesTypeType;
+use FA\GraphQL\Type\Salesman\SalesmanType;
+use FA\GraphQL\Type\Shipper\ShipperType;
+use FA\GraphQL\Type\StockItem\StockItemType;
+use FA\GraphQL\Type\TaxGroup\TaxGroupType;
 use FA\GraphQL\Type\Viewer\ViewerType;
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\Type;
@@ -43,6 +52,22 @@ class ApiSchema extends Schema
                             return self::VERSION;
                         },
                     ],
+                    // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'creditStatusList',
+                        $this->type(CreditStatusType::class),
+                        'resolveList'
+                    )
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('currencyList', $this->type(CurrencyType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('locationList', $this->type(LocationType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
                     'me' => [
                         'type' => Type::nonNull($this->type(ViewerType::class)),
                         'description' => 'The signed-in user.',
@@ -51,7 +76,35 @@ class ApiSchema extends Schema
                         },
                     ],
                     // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'paymentTermsList',
+                        $this->type(PaymentTermsType::class),
+                        'resolveList'
+                    )
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('salesAreaList', $this->type(SalesAreaType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
                     GraphQLUtils::createListField('salesTypeList', $this->type(SalesTypeType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('salesmanList', $this->type(SalesmanType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('shipperList', $this->type(ShipperType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('stockItemList', $this->type(StockItemType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('taxGroupList', $this->type(TaxGroupType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
                 ],
