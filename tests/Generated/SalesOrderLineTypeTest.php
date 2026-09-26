@@ -76,8 +76,8 @@ class SalesOrderLineTypeTest extends TestCase
                 $expected[$name] = $isCreate && in_array($name, ['stockId', 'quantity'], true) ? $bare . '!' : $bare;
             }
             if (!$isCreate) {
-                // Task 8 decides how an updated line names itself; for now, as generated.
-                $expected = ['id' => 'ID!'] + $expected;
+                // An updated line names an existing line by id; without one it is new.
+                $expected = ['id' => 'ID'] + $expected;
             }
             ksort($actual);
             ksort($expected);

@@ -8,6 +8,7 @@ use Anorm\GraphQL\Mapper;
 use DI\Container;
 use FA\GraphQL\Fa\Service\SalesOrderService;
 use FA\GraphQL\Fa\Service\ServiceCall;
+use FA\GraphQL\Fa\Warnings;
 use FA\GraphQL\Model\SalesOrderLineModel;
 use FA\GraphQL\Type\SalesOrder\Base\SalesOrderTypeBase;
 use FA\GraphQL\Type\SalesOrderLine\SalesOrderLineType;
@@ -19,7 +20,6 @@ use GraphQL\Type\Definition\Type;
  * Read like any generated Type; written only through FrontAccounting's Cart
  * (SalesOrderService), never by ModelType's own write (Release 2 spec section 2).
  * sales_orders also holds quotations; scope() keeps the API to trans_type 30.
- * Update and delete stay refused by FaModelType until they are wired.
  */
 class SalesOrderType extends SalesOrderTypeBase
 {
@@ -77,6 +77,49 @@ class SalesOrderType extends SalesOrderTypeBase
         });
 
         return $this->rowsById($context, $ids, self::VERB_CREATE);
+    }
+
+    public function resolveUpdate($root, $args, Container $context): array
+    {
+        $this->authorize(self::VERB_EDIT, null, $context);
+        $service = $context->get(SalesOrderService::class);
+        $ids = ServiceCall::each($args['input'], function (array $input) use ($service): int {
+            $input['id'] = self::intId($input['id'] ?? null);
+            $service->update($input);
+
+            return $input['id'];
+        });
+
+        return $this->rowsById($context, $ids, self::VERB_EDIT);
+    }
+
+    /**
+     * FrontAccounting's cancel (Release 2 spec section 4.4): returns each order as it
+     * was, lines included. An order with deliveries is closed rather than deleted; the
+     * response's extensions.warnings says so.
+     */
+    public function resolveDelete($root, $args, Container $context): array
+    {
+        $this->authorize(self::VERB_DELETE, null, $context);
+        $ids = self::intIds($args['id']);
+        $before = [];
+        foreach ($this->rowsById($context, $ids, self::VERB_DELETE) as $index => $row) {
+            $row['lines'] = self::linesOf($ids[$index], $context);
+            $before[] = $row;
+        }
+
+        $service = $context->get(SalesOrderService::class);
+        $outcomes = ServiceCall::each($ids, function (int $id) use ($service): string {
+            return $service->delete($id);
+        });
+        foreach ($outcomes as $index => $outcome) {
+            if ($outcome === SalesOrderService::CLOSED) {
+                Warnings::add("Sales order {$ids[$index]} has deliveries: its undelivered part was cancelled "
+                    . '(the order is closed), not deleted.');
+            }
+        }
+
+        return $before;
     }
 
     /**

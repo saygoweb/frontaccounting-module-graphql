@@ -322,9 +322,12 @@ update and delete need `SA_SALESORDER`.
   order with no deliveries is deleted (`delete_sales_order`), its schedule deleted
   in the same transaction; an order with deliveries is closed (`close_sales_order`:
   quantities set to what was delivered) and its schedule gets `end = today` when
-  that is earlier than its end. Returns the orders as they were. The version is not
-  checked: the generated `salesOrderDelete(id: [ID!]!)` carries none, and the
-  generated shape wins (§1).
+  that is earlier than its end. Returns the orders as they were.
+  *(revised)* The version is not checked on delete: the generated
+  `salesOrderDelete(id: [ID!]!)` takes only ids (generation wins, §1). The order row
+  is locked (`SELECT … FOR UPDATE`) inside the transaction, so the deliveries check
+  and the delete or close are one step. An order that is closed rather than deleted
+  is reported in `extensions.warnings`.
 
 ### 4.5 Recurrence
 

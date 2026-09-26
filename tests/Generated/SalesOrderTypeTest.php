@@ -127,8 +127,9 @@ class SalesOrderTypeTest extends TestCase
 
     /**
      * The create Input: the Type's fields less the key and SalesOrderCreateInput::SERVER_SET,
-     * the required ones non-null, plus the lines. The update Input stays as generated
-     * until Task 8: the key non-null, nothing else.
+     * the required ones non-null, plus the lines. The update Input: a patch — the key
+     * and the version read non-null, the rest optional, less SalesOrderUpdateInput::SERVER_SET,
+     * plus the optional lines.
      */
     public function testInputMirrorsTheType(): void
     {
@@ -141,7 +142,12 @@ class SalesOrderTypeTest extends TestCase
                 $this->assertSame('ID!', $update['id'] ?? null);
                 continue;
             }
-            $this->assertSame($bare, $update[$name] ?? null, "SalesOrderUpdateInput.$name");
+            if (in_array($name, SalesOrderUpdateInput::SERVER_SET, true)) {
+                $this->assertArrayNotHasKey($name, $update, "FrontAccounting sets $name");
+            } else {
+                $expectedUpdate = $name === 'version' ? 'Int!' : $bare;
+                $this->assertSame($expectedUpdate, $update[$name] ?? null, "SalesOrderUpdateInput.$name");
+            }
             if (in_array($name, SalesOrderCreateInput::SERVER_SET, true)) {
                 $this->assertArrayNotHasKey($name, $create, "FrontAccounting sets $name");
                 continue;
@@ -154,6 +160,12 @@ class SalesOrderTypeTest extends TestCase
             [],
             array_diff(array_keys($create), array_keys($this->expectedFieldTypes()), ['lines']),
             'nothing else on the create Input'
+        );
+        $this->assertSame('[SalesOrderLineUpdateInput!]', $update['lines'] ?? null);
+        $this->assertSame(
+            [],
+            array_diff(array_keys($update), array_keys($this->expectedFieldTypes()), ['lines']),
+            'nothing else on the update Input'
         );
     }
 
@@ -172,7 +184,8 @@ class SalesOrderTypeTest extends TestCase
 
     /**
      * Through the schema, with no PDO transaction open (see above): create, then read
-     * back by id with the computed lines. Task 8 extends it with update and delete.
+     * back by id with the computed lines; update with the version read, refuse the
+     * same version again as stale; delete, which returns the order as it was.
      */
     private function lifecycleThroughFrontAccounting(): void
     {
@@ -203,6 +216,33 @@ class SalesOrderTypeTest extends TestCase
             [['stockId' => '101', 'quantity' => 1.0, 'qtyDelivered' => 0.0, 'discountPercent' => 0.0]],
             $read[0]['lines']
         );
+
+        $version = (int) $created[0]['version'];
+        $updated = $this->runGraphQL(
+            'mutation ($input: [SalesOrderUpdateInput!]!) { salesOrderUpdate(input: $input) { id version comments } }',
+            ['input' => [['id' => $id, 'version' => $version, 'comments' => 'updated']]]
+        )['salesOrderUpdate'];
+        $this->assertSame('updated', $updated[0]['comments']);
+        $this->assertSame($version + 1, (int) $updated[0]['version']);
+
+        $stale = \GraphQL\GraphQL::executeQuery(
+            $this->createSchema($this->container),
+            'mutation ($input: [SalesOrderUpdateInput!]!) { salesOrderUpdate(input: $input) { id } }',
+            null,
+            $this->container,
+            ['input' => [['id' => $id, 'version' => $version, 'comments' => 'stale']]]
+        )->toArray();
+        $this->assertSame('FA_REJECTED', $stale['errors'][0]['extensions']['code']);
+
+        $deleted = $this->runGraphQL(
+            'mutation ($id: [ID!]!) { salesOrderDelete(id: $id) { id comments } }',
+            ['id' => [$id]]
+        )['salesOrderDelete'];
+        $this->assertSame('updated', $deleted[0]['comments'], 'as it was');
+        $this->assertSame([], $this->runGraphQL(
+            'query ($q: MangoInput) { salesOrderList(query: $q) { id } }',
+            ['q' => ['selector' => json_encode(['id' => $id])]]
+        )['salesOrderList']);
     }
 
     /**

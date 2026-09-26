@@ -71,11 +71,12 @@ class SalesOrderAreasTest extends TestCase
     }
 
     /**
-     * Until Task 8 wires them, FaModelType's fail-closed resolvers refuse both.
+     * Update and delete are wired through SalesOrderService; both need the order area
+     * before anything is touched, as create does.
      */
-    public function testUpdateAndDeleteAreRefusedUntilTheyAreWired(): void
+    public function testUpdatingOrDeletingWithoutTheOrderAreaIsForbiddenBeforeAnythingIsTouched(): void
     {
-        $this->signIn(['SA_GRAPHQL', 'SA_SALESORDER', 'SA_SALESTRANSVIEW']);
+        $this->signIn(['SA_GRAPHQL', 'SA_SALESTRANSVIEW']);
         $type = new SalesOrderType(new SalesOrderLineType());
 
         $calls = ['resolveUpdate' => ['input' => [['id' => '1']]], 'resolveDelete' => ['id' => ['1']]];
@@ -84,7 +85,7 @@ class SalesOrderAreasTest extends TestCase
                 $type->$method(null, $args, new Container());
                 $this->fail("$method was not refused");
             } catch (Forbidden $e) {
-                $this->assertStringContainsString('no write path is declared', $e->getMessage());
+                $this->assertStringContainsString('SA_SALESORDER', $e->getMessage());
             }
         }
     }

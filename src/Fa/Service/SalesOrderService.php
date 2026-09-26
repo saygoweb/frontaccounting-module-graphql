@@ -4,6 +4,8 @@ namespace FA\GraphQL\Fa\Service;
 
 use FA\GraphQL\Error\BadInput;
 use FA\GraphQL\Error\FaRejected;
+use FA\GraphQL\Error\Forbidden;
+use FA\GraphQL\Error\NotFound;
 use FA\GraphQL\Fa\DateConversion;
 
 /**
@@ -21,6 +23,11 @@ use FA\GraphQL\Fa\DateConversion;
 class SalesOrderService
 {
     public const TRANS_TYPE = 30; // ST_SALESORDER
+    public const DELETED = 'DELETED';
+    public const CLOSED = 'CLOSED';
+    public const STALE = 'The order was changed by someone else; read it again.';
+    private const FROZEN = 'Something on this order has been delivered or invoiced: its customer, branch, price list, '
+        . 'date, payment terms and prepayment can no longer change.';
 
     /**
      * @param array<string, mixed> $input a SalesOrderCreateInput
@@ -462,5 +469,304 @@ class SalesOrderService
     protected static function given(array $input, string $key): bool
     {
         return array_key_exists($key, $input) && $input[$key] !== null;
+    }
+
+    /**
+     * Edit an order as sales_order_entry.php?ModifyOrderNumber= does.
+     *
+     * @param array<string, mixed> $input a SalesOrderUpdateInput
+     */
+    public function update(array $input): void
+    {
+        FaIncludes::orders();
+        $id = (int) $input['id'];
+        $this->lockVersion($id, (int) $input['version']);
+        $this->assertEditable($id);
+
+        // read_sales_order(), sales_order_db.inc :303-355.
+        $cart = new \Cart(ST_SALESORDER, $id);
+        $recurring = $this->isRecurringOrder($id, $input);
+        if ($cart->is_started() && !$recurring) {
+            $this->assertHeaderUnchanged($cart, $input);
+        }
+
+        $oldSalesType = $cart->sales_type;
+        $oldCurrency = $cart->customer_currency;
+        $oldDate = $cart->document_date;
+        if (self::given($input, 'orderDate')) {
+            $cart->document_date = DateConversion::toFa($input['orderDate'], 'orderDate');
+            $this->assertFiscalYear($cart->document_date, 'orderDate');
+        }
+        $customerId = self::given($input, 'customerId')
+            ? IntKey::parse($input['customerId'], 'customerId')
+            : (int) $cart->customer_id;
+        $branchId = self::given($input, 'branchId')
+            ? IntKey::parse($input['branchId'], 'branchId')
+            : (int) $cart->Branch;
+        if ($customerId !== (int) $cart->customer_id || $branchId !== (int) $cart->Branch) {
+            // A new customer or branch brings its defaults, as when the page's customer
+            // list changes (sales_order_ui.inc :285-349).
+            $this->setCustomer($cart, $customerId, $branchId, 'customerId');
+        } elseif ($cart->document_date !== $oldDate && !self::given($input, 'deliveryDate')) {
+            // display_order_header() :430-436: a new date moves the delivery date.
+            global $SysPrefs;
+            $cart->due_date = add_days($cart->document_date, $SysPrefs->default_delivery_required_by());
+        }
+        $this->applyHeader($cart, $input);
+        // can_process() :457-458, before anything is priced (as in create()).
+        $this->assertCurrencyRate($cart);
+        if (self::given($input, 'reference') && (string) $input['reference'] !== (string) $cart->reference) {
+            $cart->reference = $this->reference($cart, (string) $input['reference']);
+            // Cart::write() checks a reference is new only for a new order
+            // (cart_class.inc :293); an edit could otherwise take another order's.
+            if (!is_new_reference($cart->reference, ST_SALESORDER, $id)) {
+                throw new BadInput('The entered reference is already in use.', 'reference');
+            }
+        }
+
+        $dateReprices = $cart->document_date !== $oldDate
+            && !is_company_currency($cart->customer_currency) && get_base_sales_type() > 0;
+        if ($cart->sales_type != $oldSalesType || $cart->customer_currency != $oldCurrency || $dateReprices) {
+            $this->reprice($cart);
+        }
+        if (array_key_exists('lines', $input) && $input['lines'] !== null) {
+            $this->replaceLines($cart, array_values($input['lines']), $recurring);
+        }
+        $this->validate($cart);
+
+        // update_sales_order(), sales_order_db.inc :122-222: returns nothing.
+        $cart->write(1);
+        $this->afterUpdate($id, $input);
+    }
+
+    /**
+     * FrontAccounting's cancel (handle_cancel_order(), sales_order_entry.php :634-648):
+     * delivered-from orders are closed, others deleted. No version check: the generated
+     * salesOrderDelete takes only ids (Release 2 spec section 4.4, revised); the row
+     * lock makes the deliveries check and the delete one step.
+     */
+    public function delete(int $id): string
+    {
+        FaIncludes::orders();
+        $this->lockOrder($id);
+        $this->assertEditable($id);
+
+        if (sales_order_has_deliveries($id)) {
+            close_sales_order($id);
+            $this->afterClose($id);
+
+            return self::CLOSED;
+        }
+        delete_sales_order($id, ST_SALESORDER);
+        $this->afterDelete($id);
+
+        return self::DELETED;
+    }
+
+    /**
+     * Task 9: whether the order has (or is being given) a recurring schedule, which
+     * relaxes the frozen header and the delivered-quantity floor as sgw_sales does.
+     *
+     * @param array<string, mixed> $input
+     */
+    protected function isRecurringOrder(int $id, array $input): bool
+    {
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     */
+    protected function afterUpdate(int $id, array $input): void
+    {
+    }
+
+    protected function afterDelete(int $id): void
+    {
+    }
+
+    protected function afterClose(int $id): void
+    {
+    }
+
+    /**
+     * The row lock and the version check, inside the caller's transaction: the lock
+     * holds until it commits, so nobody writes between this check and ours.
+     * FrontAccounting's own check (update_sales_order()'s WHERE version = …) ignores a
+     * zero-row update and rewrites the lines anyway.
+     */
+    private function lockVersion(int $id, int $version): void
+    {
+        if ($this->lockOrder($id) !== $version) {
+            throw new FaRejected(self::STALE, [self::STALE]);
+        }
+    }
+
+    /**
+     * @return int the order's version
+     */
+    private function lockOrder(int $id): int
+    {
+        $result = db_query(
+            'SELECT version FROM ' . TB_PREF . 'sales_orders WHERE order_no = ' . db_escape($id)
+            . ' AND trans_type = ' . ST_SALESORDER . ' FOR UPDATE',
+            'could not lock the sales order'
+        );
+        $row = db_fetch($result);
+        if (!$row) {
+            throw new NotFound("There is no sales order $id.");
+        }
+
+        return (int) $row['version'];
+    }
+
+    /**
+     * What the page checks before it shows an order for editing
+     * (sales_order_entry.php :104-112).
+     */
+    private function assertEditable(int $id): void
+    {
+        if (is_prepaid_order_open($id)) {
+            $message = 'This order cannot be edited because there are invoices or payments related to it, '
+                . 'and prepayment terms were used.';
+            throw new FaRejected($message, [$message]);
+        }
+        // check_is_editable(), includes/data_checks.inc :646-659.
+        $user = $_SESSION['wa_current_user'];
+        if (!$user->can_access('SA_EDITOTHERSTRANS')) {
+            $audit = get_audit_trail_last(ST_SALESORDER, $id);
+            // No audit row: FrontAccounting's comparison fails too.
+            if (!$audit || (int) $user->user !== (int) $audit['user']) {
+                throw new Forbidden('You have no edit access to transactions created by other users.');
+            }
+        }
+    }
+
+    /**
+     * Once started, the page shows the customer, branch, price list and date
+     * read-only (sales_order_ui.inc :254-263), freezes the payment terms (:378-379)
+     * and the prepayment (copy_to_cart() :303-304). Giving a frozen field its current
+     * value is not a change.
+     *
+     * @param array<string, mixed> $input
+     */
+    private function assertHeaderUnchanged(\Cart $cart, array $input): void
+    {
+        $current = [
+            'customerId' => (int) $cart->customer_id,
+            'branchId' => (int) $cart->Branch,
+            'salesTypeId' => (int) $cart->sales_type,
+            'paymentTermsId' => (int) $cart->payment,
+        ];
+        foreach ($current as $field => $value) {
+            if (self::given($input, $field) && IntKey::parse($input[$field], $field) !== $value) {
+                throw new BadInput(self::FROZEN, $field);
+            }
+        }
+        if (
+            self::given($input, 'orderDate')
+            && DateConversion::iso($input['orderDate'], 'orderDate') !== DateConversion::fromFa($cart->document_date)
+        ) {
+            throw new BadInput(self::FROZEN, 'orderDate');
+        }
+        if (
+            self::given($input, 'prepaymentAmount')
+            && abs((float) $input['prepaymentAmount'] - (float) $cart->prep_amount) > 0.00001
+        ) {
+            throw new BadInput(self::FROZEN, 'prepaymentAmount');
+        }
+    }
+
+    /**
+     * display_order_header() :460-466: every line re-priced from the (new) price list.
+     * Prices given in this update are applied afterwards and win.
+     */
+    private function reprice(\Cart $cart): void
+    {
+        foreach ($cart->line_items as $line) {
+            $line->price = get_kit_price(
+                $line->stock_id,
+                $cart->customer_currency,
+                $cart->sales_type,
+                $cart->price_factor,
+                $cart->document_date
+            );
+        }
+    }
+
+    /**
+     * The given lines replace the order's: with an id, that line updated
+     * (update_cart_item(), cart_class.inc :412-420); without, a new line (addLine());
+     * omitted, deleted — unless delivered (handle_delete_item(), sales_order_entry.php
+     * :591-599).
+     *
+     * @param array<int, array<string, mixed>> $lines
+     */
+    private function replaceLines(\Cart $cart, array $lines, bool $recurring): void
+    {
+        if (count($lines) === 0) {
+            throw new BadInput('An order needs at least one line.', 'lines');
+        }
+        $existing = [];
+        foreach ($cart->line_items as $line) {
+            $existing[(int) $line->id] = $line;
+        }
+
+        $kept = [];
+        $added = [];
+        foreach ($lines as $index => $given) {
+            $field = 'lines.' . $index;
+            if (!self::given($given, 'id')) {
+                $added[$index] = $given;
+                continue;
+            }
+            $id = (int) $given['id'];
+            if (!isset($existing[$id])) {
+                throw new BadInput("Line $id is not a line of this order.", "$field.id");
+            }
+            $line = $existing[$id];
+            unset($existing[$id]);
+            if (self::given($given, 'stockId') && strcasecmp((string) $given['stockId'], $line->stock_id) !== 0) {
+                throw new BadInput("A line's item cannot change: remove the line and add another.", "$field.stockId");
+            }
+            $quantity = self::given($given, 'quantity') ? (float) $given['quantity'] : (float) $line->quantity;
+            $price = self::given($given, 'unitPrice') ? (float) $given['unitPrice'] : (float) $line->price;
+            $discount = self::given($given, 'discountPercent')
+                ? (float) $given['discountPercent']
+                : (float) $line->discount_percent * 100;
+            $this->checkLine(
+                $line->stock_id,
+                $quantity,
+                $price,
+                $discount,
+                $field,
+                (float) $line->qty_done,
+                $recurring
+            );
+            if (self::given($given, 'unitPrice')) {
+                $this->warnIfBelowCost($cart, $line->stock_id, $price);
+            }
+            $line->quantity = $quantity;
+            $line->qty_dispatched = $quantity;
+            $line->price = $price;
+            $line->discount_percent = $discount / 100;
+            if (self::given($given, 'description') && $line->descr_editable) {
+                $line->item_description = (string) $given['description'];
+            }
+            $kept[] = $line;
+        }
+        foreach ($existing as $id => $line) {
+            if ($line->qty_done != 0) {
+                throw new BadInput("Line $id has been delivered and cannot be removed.", 'lines');
+            }
+        }
+
+        $cart->line_items = $kept;
+        foreach ($added as $index => $given) {
+            if (!self::given($given, 'stockId') || !self::given($given, 'quantity')) {
+                throw new BadInput('A new line needs a stockId and a quantity.', "lines.$index.stockId");
+            }
+            $this->addLine($cart, $given, 'lines.' . $index);
+        }
     }
 }
