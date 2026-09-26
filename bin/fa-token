@@ -13,8 +13,9 @@
  *
  * `issue` prints the token once, alone, on stdout; everything else goes to stderr.
  * Command line only: a web SAPI gets a bare 404, and .htaccess and the vhost deny
- * bin/ anyway. Anyone able to run it can already run PHP as the web server's user.
- * The work is FA\GraphQL\Cli\TokenCommand's.
+ * bin/ anyway. Run it as the web server's user (for example `sudo -u www-data`),
+ * not root — otherwise FrontAccounting may create root-owned files under `tmp/`
+ * that the web server can no longer write. The work is FA\GraphQL\Cli\TokenCommand's.
  */
 
 if (PHP_SAPI !== 'cli') {

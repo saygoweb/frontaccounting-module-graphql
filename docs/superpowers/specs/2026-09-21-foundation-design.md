@@ -526,9 +526,11 @@ issued a company-1 token when the two companies' databases shared a prefix.
 A service calling the API unattended (the hosting panel) holds a **machine token**
 rather than a password: long-lived, revocable, issued offline.
 
-**Issuing.** Only `bin/fa-token`, on the server, as whoever can already run PHP as
-the web server's user. Command line only: it answers any other SAPI with a bare 404
-before doing anything, and `.htaccess` and the vhost deny `bin/`.
+**Issuing.** Only `bin/fa-token`, on the server, run as the web server's user (for
+example `sudo -u www-data`) — not root, or FrontAccounting may create root-owned
+files under `tmp/` that the web server can no longer write. Command line only: it
+answers any other SAPI with a bare 404 before doing anything, and `.htaccess` and
+the vhost deny `bin/`.
 
 ```
 bin/fa-token issue  --company N --user LOGIN --days D --label TEXT
@@ -597,12 +599,21 @@ nor `tokenRefresh` ever issues one. A machine token presented as the bearer of
 itself — only `bin/fa-token revoke` does that.
 
 **Operations.** HTTPS is required in production, as for passwords. Rotate by issuing
-a new token, moving the service to it, then revoking the old one. The dev seed adds
-role "GraphQL Panel" (section 3072 with areas 3073 `SA_SALESTRANSVIEW`, 3074
-`SA_CUSTOMER`, 3075 `SA_SALESORDER`; `SS_GRAPHQL`/`SA_GRAPHQL` 91136/91236) and user
-`sgwpanel` in it, whose password hash is a random non-hex string no `md5()` equals,
-so it can never `login`. A production role for a service should likewise hold only
-what that service uses.
+a new token, moving the service to it, then revoking the old one. A company
+activated before this change has no `graphql_machine_token` table: `issue`, `list`
+and `revoke` then refuse with the fix — re-activate the GraphQL extension for it
+(Setup → Install/Activate Extensions) or apply `sql/update_1.1.sql` directly —
+rather than let a raw `PDOException` reach the operator. The dev seed adds role
+"GraphQL Panel" (section 3072 with areas 3073 `SA_SALESTRANSVIEW`, 3074
+`SA_CUSTOMER`, 3075 `SA_SALESORDER`; `SS_GRAPHQL`/`SA_GRAPHQL` 91136/91236): the
+smallest areas that cover what the dev panel uses, though `SA_CUSTOMER` also permits
+creating, updating and deleting customers, branches and contacts, and
+`SA_SALESORDER` also permits deleting orders — read-only customer access would need
+a separate role area, in a later release. Its user `sgwpanel` has a password hash
+that is a random non-hex string no `md5()` equals, so it can never `login`, and an
+email nobody can receive (`sgwpanel@invalid.invalid`, RFC 2606/6761): a service user
+should have one too, or FrontAccounting's password reset should stay off. A
+production role for a service should likewise hold only what that service uses.
 
 ## 4. Container and database
 

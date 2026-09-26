@@ -63,7 +63,9 @@ for one FrontAccounting user in one company, living up to a year
 (`machine_ttl_max`, default 31536000 seconds), and revocable at any time. It is sent
 exactly like an access token (`Authorization: Bearer …`); there is nothing to
 refresh. Machine tokens are issued only from the command line on the server, never
-by the API:
+by the API, and run as the web server's user outside the dev stack (for example
+`sudo -u www-data`) — not root, or FrontAccounting may create root-owned files
+under `tmp/` that the web server can no longer write:
 
     # in the docker stack, prefix each with: docker/fa-graphql exec
     bin/fa-token issue  --company 0 --user sgwpanel --days 365 --label "my.saygoweb.com"
@@ -79,14 +81,24 @@ by the API:
   and expiry times, when it was last used (to the minute), and its label.
 - `revoke` takes effect on the next request: every request with a machine token
   looks its jti up, and an unknown, revoked or expired one is **HTTP 401**.
+- A company activated before machine tokens landed has no `graphql_machine_token`
+  table: `issue`, `list` and `revoke` then refuse with the fix — re-activate the
+  GraphQL extension for it (Setup → Install/Activate Extensions) or apply
+  `sql/update_1.1.sql` directly.
 - The token acts as its user: deactivating the user, or taking GraphQL API access
   from its role, refuses the token too (401 / 403), and the role's areas limit what
-  it can do. Give the service a user of its own, in a role holding **only** what the
-  service uses. The dev stack seeds `sgwpanel` in "GraphQL Panel": GraphQL API
-  access, sales transaction view, customers and sales orders — enough for
-  `customerList` (with balances), `salesOrderList/Create/Update`, `invoiceList` and
-  `customerPaymentList`, and nothing more. Its password is unusable, so it can never
-  `login`.
+  it can do. Give the service a user of its own, in a role holding only what the
+  service uses, with an email nobody can receive (or keep FrontAccounting's password
+  reset off) — otherwise a reset mails that address a usable password. The dev stack
+  seeds `sgwpanel` in "GraphQL Panel": GraphQL API access plus SA_SALESTRANSVIEW,
+  SA_CUSTOMER and SA_SALESORDER, which is what `customerList` (with balances),
+  `salesOrderList/Create/Update`, `invoiceList` and `customerPaymentList` need — but
+  those areas allow more than the panel happens to use: SA_CUSTOMER also permits
+  creating, updating and deleting customers, branches and contacts, and
+  SA_SALESORDER also permits deleting orders. Read-only customer access would need
+  a separate role area; that is a later release. Its password is an unusable
+  `!unusable-…` string that no `md5()` hash can equal, so it can never `login`, and
+  its seeded email (`sgwpanel@invalid.invalid`) is unroutable (RFC 2606/6761).
 - **Rotate** by issuing a new token, switching the service to it, then revoking the
   old one: both work in between.
 - **Use HTTPS in production.** A machine token is as good as a password for a year;

@@ -13,7 +13,9 @@ use Psr\Container\ContainerInterface;
 
 /**
  * bin/fa-token: issue, list and revoke machine tokens (Foundation spec §3.7). Only
- * from the command line, by whoever can already run PHP as the web server's user.
+ * from the command line, run as the web server's user (for example `sudo -u
+ * www-data`) — otherwise FrontAccounting may create root-owned files under `tmp/`
+ * that the web server can no longer write.
  *
  * It works through the module's own container, so the company is opened, the user
  * checked and the rows written exactly as the API would: FaSession, UserModel,
@@ -106,6 +108,10 @@ TXT;
         if ($user === null) {
             throw new Refused("company $company has no user '$login'.");
         }
+        // findByLogin() matches case-insensitively (MySQL's default collation); use
+        // the login as FrontAccounting stored it, so `list` never shows two
+        // spellings of the same user.
+        $login = $user->login;
         if ($user->inactive) {
             throw new Refused("user '$login' is inactive.");
         }
@@ -123,6 +129,8 @@ TXT;
             $issued = $container->get(MachineTokenService::class)->issue($company, $login, $days, $label);
         } catch (\InvalidArgumentException $e) {
             throw new Refused($e->getMessage());
+        } catch (\PDOException $e) {
+            throw self::missingTable($company, $e);
         }
 
         fwrite($this->err, sprintf(
@@ -148,11 +156,18 @@ TXT;
     private function list(array $options, array $positional): int
     {
         self::only($options, ['company'], $positional, 0);
-        $container = $this->open(self::number($options, 'company'));
+        $company = self::number($options, 'company');
+        $container = $this->open($company);
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
 
+        try {
+            $records = $container->get(MachineTokenService::class)->list();
+        } catch (\PDOException $e) {
+            throw self::missingTable($company, $e);
+        }
+
         fwrite($this->out, implode("\t", ['jti', 'user', 'status', 'issued', 'expires', 'last used', 'label']) . "\n");
-        foreach ($container->get(MachineTokenService::class)->list() as $record) {
+        foreach ($records as $record) {
             fwrite($this->out, implode("\t", [
                 $record->jti,
                 $record->login,
@@ -175,9 +190,15 @@ TXT;
     {
         self::only($options, ['company'], $positional, 1);
         $jti = $positional[0];
-        $container = $this->open(self::number($options, 'company'));
+        $company = self::number($options, 'company');
+        $container = $this->open($company);
 
-        if (!$container->get(MachineTokenService::class)->revoke($jti)) {
+        try {
+            $revoked = $container->get(MachineTokenService::class)->revoke($jti);
+        } catch (\PDOException $e) {
+            throw self::missingTable($company, $e);
+        }
+        if (!$revoked) {
             throw new Refused("no live machine token $jti (unknown, or already revoked).");
         }
         fwrite($this->out, "Revoked $jti.\n");
@@ -195,6 +216,25 @@ TXT;
         }
 
         return $container;
+    }
+
+    /**
+     * A missing `graphql_machine_token` table (SQLSTATE 42S02) means this
+     * company's schema predates the machine-tokens change: refuse with the fix,
+     * rather than let a raw PDOException reach the operator. Any other
+     * PDOException is a genuine server fault and is left to fail loudly.
+     */
+    private static function missingTable(int $company, \PDOException $e): \Exception
+    {
+        if ($e->getCode() === '42S02') {
+            return new Refused(
+                "company $company has no graphql_machine_token table: re-activate the GraphQL "
+                . 'extension for it (Setup → Install/Activate Extensions) or apply '
+                . 'sql/update_1.1.sql.'
+            );
+        }
+
+        return $e;
     }
 
     private static function status(MachineTokenRecord $record, \DateTimeImmutable $now): string

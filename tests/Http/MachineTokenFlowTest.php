@@ -12,8 +12,10 @@ use PHPUnit\Framework\TestCase;
  * never accepted as a refresh token — and bin/fa-token itself never served.
  *
  * The suite runs in the stack's app container, next to Apache, so bin/fa-token runs
- * here against the same database. tearDown deletes every token a test issued (by its
- * label) and reactivates sgwpanel, pass or fail.
+ * here against the same database. tearDown deletes every token a test issued (by
+ * its label) and any throwaway user a test created, pass or fail. sgwpanel itself
+ * is never deactivated: a teammate's dev token is that same user, so the
+ * deactivation tests use a dedicated throwaway user in the same role instead.
  */
 class MachineTokenFlowTest extends TestCase
 {
@@ -24,6 +26,8 @@ class MachineTokenFlowTest extends TestCase
     private string $label;
 
     private ?\PDO $pdo = null;
+
+    private ?string $testUser = null;
 
     protected function setUp(): void
     {
@@ -38,10 +42,39 @@ class MachineTokenFlowTest extends TestCase
         if ($this->pdo === null) {
             return;
         }
+        $this->deleteTestUser();
         $this->pdo->prepare('DELETE FROM ' . $this->table('graphql_machine_token') . ' WHERE label LIKE ?')
             ->execute([$this->label . '%']);
-        $this->setInactive('sgwpanel', false);
         $this->setInactive('apitest', false);
+    }
+
+    /**
+     * A throwaway user in "GraphQL Panel" (sgwpanel's own role), for the tests that
+     * need to deactivate a user — never sgwpanel itself, which a teammate's dev
+     * token also signs in as. tearDown removes it, pass or fail.
+     */
+    private function createTestUser(): string
+    {
+        $login = 'sgwpaneltest' . bin2hex(random_bytes(4));
+        $this->pdo()->prepare(
+            'INSERT INTO ' . $this->table('users')
+                . ' (`user_id`, `password`, `real_name`, `role_id`, `email`, `language`)'
+                . ' SELECT ?, CONCAT(\'!unusable-\', SHA2(CONCAT(UUID(), RAND()), 256)), ?, `role_id`, ?, `language`'
+                . ' FROM ' . $this->table('users') . " WHERE `user_id` = 'sgwpanel'"
+        )->execute([$login, 'GraphQL Panel test user', $login . '@invalid.invalid']);
+        $this->testUser = $login;
+
+        return $login;
+    }
+
+    private function deleteTestUser(): void
+    {
+        if ($this->testUser === null) {
+            return;
+        }
+        $this->pdo->prepare('DELETE FROM ' . $this->table('users') . ' WHERE `user_id` = ?')
+            ->execute([$this->testUser]);
+        $this->testUser = null;
     }
 
     private function pdo(): \PDO
@@ -189,15 +222,16 @@ class MachineTokenFlowTest extends TestCase
 
     public function testADeactivatedUsersTokenIs401(): void
     {
-        $issued = $this->issue();
-        $this->setInactive('sgwpanel', true);
+        $user = $this->createTestUser();
+        $issued = $this->issue($user);
+        $this->setInactive($user, true);
 
         $response = $this->gql('{ customerList { id } }', [], $issued['token']);
 
         $this->assertSame(401, $response['status'], $response['raw']);
         $this->assertSame('UNAUTHENTICATED', $this->code($response));
 
-        $this->setInactive('sgwpanel', false);
+        $this->setInactive($user, false);
         $this->assertSame(200, $this->gql('{ me { login } }', [], $issued['token'])['status']);
     }
 
@@ -255,10 +289,11 @@ class MachineTokenFlowTest extends TestCase
 
     public function testAnInactiveUserIsRefused(): void
     {
-        $this->setInactive('sgwpanel', true);
+        $user = $this->createTestUser();
+        $this->setInactive($user, true);
 
         $run = $this->faToken([
-            'issue', '--company', '0', '--user', 'sgwpanel', '--days', '30', '--label', $this->label,
+            'issue', '--company', '0', '--user', $user, '--days', '30', '--label', $this->label,
         ]);
 
         $this->assertSame(1, $run->exitCode, $run->stderr);
@@ -272,6 +307,34 @@ class MachineTokenFlowTest extends TestCase
 
         $this->assertSame(1, $run->exitCode, $run->stderr);
         $this->assertStringContainsString('no company 99', $run->stderr);
+    }
+
+    /**
+     * A company activated before the machine-tokens change (Foundation spec §3.7)
+     * has no `graphql_machine_token` table: `RENAME TABLE` stands in for that, since
+     * it is not transactional (an implicit commit either way) and must be undone by
+     * hand — the `finally` restores it even if an assertion fails.
+     */
+    public function testAMissingTableRefusesWithAnUpgradeHint(): void
+    {
+        $table = $this->table('graphql_machine_token');
+        $backup = $table . '_test_backup';
+        $this->pdo()->exec('RENAME TABLE ' . $table . ' TO ' . $backup);
+
+        try {
+            $run = $this->faToken(['list', '--company', '0']);
+
+            $this->assertSame(1, $run->exitCode, $run->stdout);
+            $this->assertSame('', $run->stdout);
+            $this->assertSame(
+                'fa-token: company 0 has no graphql_machine_token table: re-activate the GraphQL '
+                    . "extension for it (Setup → Install/Activate Extensions) or apply "
+                    . "sql/update_1.1.sql.\n",
+                $run->stderr
+            );
+        } finally {
+            $this->pdo()->exec('RENAME TABLE ' . $backup . ' TO ' . $table);
+        }
     }
 
     public function testTheScriptIsNotServed(): void
