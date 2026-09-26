@@ -20,7 +20,7 @@
         "lcobucci/jwt": "^4.0",
         "php-di/php-di": "^6.0",
         "saygoweb/anorm": "^3.2.1",
-        "saygoweb/anorm-graphql": "^0.2.1",
+        "saygoweb/anorm-graphql": "^0.3",
         "slim/psr7": "^1.6",
         "slim/slim": "^4.11",
         "webonyx/graphql-php": "^15.32.3"

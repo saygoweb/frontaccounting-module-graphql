@@ -1,0 +1,20 @@
+<?php
+
+namespace FA\GraphQL\Tests\Unit\Type;
+
+use FA\GraphQL\Type\BankAccount\BankAccountType;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Release 3 spec §2, §5, §9 ruling 12: which FrontAccounting area each billing verb
+ * needs.
+ */
+class BillingAreasTest extends TestCase
+{
+    public function testBankAccountsListWithTheCustomerPaymentsArea(): void
+    {
+        $areas = (new \ReflectionMethod(BankAccountType::class, 'areas'));
+        $areas->setAccessible(true);
+        $this->assertSame(['list' => 'SA_SALESPAYMNT'], $areas->invoke(new BankAccountType()));
+    }
+}

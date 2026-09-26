@@ -59,3 +59,32 @@ SELECT 'apiorders', '5f4dcc3b5aa765d61d8327deb882cf99', 'API Orders', r.`id`, 'a
 FROM `0_security_roles` r
 WHERE r.`role` = 'GraphQL Orders'
   AND NOT EXISTS (SELECT 1 FROM `0_users` u WHERE u.`user_id` = 'apiorders');
+
+-- Release 3 (billing): deliveries SA_SALESDELIVERY = SS_SALES|4 = 3076, invoices
+-- SA_SALESINVOICE = SS_SALES|5 = 3077, customer payments SA_SALESPAYMNT = SS_SALES|8 =
+-- 3080, allocations SA_SALESALLOC = SS_SALES|9 = 3081, voids SA_VOIDTRANSACTION =
+-- SS_SPEC|1 = 769 in section SS_SPEC = 3 << 8 = 768 (includes/access_levels.inc).
+-- Appended only when missing, as above.
+UPDATE `0_security_roles`
+SET `sections` = CONCAT(`sections`, ';768')
+WHERE `role` = 'GraphQL API' AND FIND_IN_SET('768', REPLACE(`sections`, ';', ',')) = 0;
+
+UPDATE `0_security_roles`
+SET `areas` = CONCAT(`areas`, ';3076')
+WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3076', REPLACE(`areas`, ';', ',')) = 0;
+
+UPDATE `0_security_roles`
+SET `areas` = CONCAT(`areas`, ';3077')
+WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3077', REPLACE(`areas`, ';', ',')) = 0;
+
+UPDATE `0_security_roles`
+SET `areas` = CONCAT(`areas`, ';3080')
+WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3080', REPLACE(`areas`, ';', ',')) = 0;
+
+UPDATE `0_security_roles`
+SET `areas` = CONCAT(`areas`, ';3081')
+WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3081', REPLACE(`areas`, ';', ',')) = 0;
+
+UPDATE `0_security_roles`
+SET `areas` = CONCAT(`areas`, ';769')
+WHERE `role` = 'GraphQL API' AND FIND_IN_SET('769', REPLACE(`areas`, ';', ',')) = 0;

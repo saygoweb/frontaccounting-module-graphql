@@ -60,9 +60,9 @@ class ApiSchemaTest extends TestCase
         $query = array_keys($schema->getQueryType()->getFields());
         sort($query);
         $expected = [
-            'apiVersion', 'branchList', 'contactList', 'creditStatusList', 'currencyList', 'customerList',
-            'locationList', 'me', 'paymentTermsList', 'salesAreaList', 'salesOrderLineList', 'salesOrderList',
-            'salesTypeList', 'salesmanList', 'shipperList', 'stockItemList', 'taxGroupList',
+            'apiVersion', 'bankAccountList', 'branchList', 'contactList', 'creditStatusList', 'currencyList',
+            'customerList', 'locationList', 'me', 'paymentTermsList', 'salesAreaList', 'salesOrderLineList',
+            'salesOrderList', 'salesTypeList', 'salesmanList', 'shipperList', 'stockItemList', 'taxGroupList',
         ];
         sort($expected);
 

@@ -52,3 +52,6 @@ parameters:
         - ../../inventory/includes/db/items_locations_db.inc
         - ../../admin/db/fiscalyears_db.inc
         - ../../admin/db/shipping_db.inc
+        # Voider: void_transaction, get_voided_entry (admin/ is not under
+        # scanDirectories' includes/).
+        - ../../admin/db/voiding_db.inc

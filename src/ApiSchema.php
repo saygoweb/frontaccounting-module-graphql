@@ -7,6 +7,7 @@ use Anorm\GraphQL\Type\MangoInput;
 use DI\Container;
 use FA\GraphQL\Type\Auth\AuthMutations;
 use FA\GraphQL\Type\Auth\AuthPayloadType;
+use FA\GraphQL\Type\BankAccount\BankAccountType;
 use FA\GraphQL\Type\Branch\BranchCreateInput;
 use FA\GraphQL\Type\Branch\BranchType;
 use FA\GraphQL\Type\Branch\BranchUpdateInput;
@@ -65,6 +66,10 @@ class ApiSchema extends Schema
                             return self::VERSION;
                         },
                     ],
+                    // anorm-graphql
+                    GraphQLUtils::createListField('bankAccountList', $this->type(BankAccountType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
                     // anorm-graphql
                     GraphQLUtils::createListField('branchList', $this->type(BranchType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
