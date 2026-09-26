@@ -131,7 +131,7 @@ refused (`BAD_INPUT`) and always reads `null`. A recurring order keeps its
 header editable once invoices have been generated from it, and its quantities
 may drop below what was delivered, as `sgw_sales`' own page allows: each
 generated invoice raises the delivered quantity. Generating the recurring invoices
-comes in a later release.
+comes in Release 4.
 
 ### The panel's flow
 
@@ -163,6 +163,81 @@ $order = $body['data']['salesOrderCreate'][0];   // keep $order['version'] for u
 
 `HOSTING-M` is illustrative: use a stock id from your own items (the demo
 company has none by that name).
+
+### Deliveries and invoices
+
+`deliveryCreate` delivers a sales order, whole or in part, as FrontAccounting's
+delivery page does. It takes `orderId` and the `orderVersion` you read (a stale
+version is refused), the delivery `date`, and optionally `lines` (`orderLineId`,
+`quantity`; default: everything remaining) and `closeOrder` (cancel whatever is
+not delivered). Stock is checked unless the company allows negative stock.
+`deliveryDelete` voids a delivery; one that has been invoiced cannot be voided.
+
+`invoiceCreate` invoices either `deliveryIds` (one or more deliveries of the same
+customer, branch and currency) or an order in one step (`orderId` +
+`orderVersion`: FrontAccounting delivers what remains, then invoices it). The due
+date follows the payment terms unless given. `invoiceDelete` voids an invoice; an
+invoice with payments allocated to it must be deallocated first.
+
+Every document date must fall in an open fiscal year FrontAccounting accepts, and
+needs an exchange rate for the customer's currency on that date.
+
+### Payments and allocations
+
+`customerPaymentCreate` records a payment into a bank account (`bankAccountList`)
+and allocates it to invoices you name — never automatically:
+
+```graphql
+mutation ($in: [CustomerPaymentCreateInput!]!) {
+  customerPaymentCreate(input: $in) { id unallocated allocations { toId amount } }
+}
+```
+
+with `{"in": [{"customerId": "12", "branchId": "12", "bankAccountId": "1",
+"date": "2026-09-26", "amount": 110, "allocations": [{"invoiceId": "34", "amount": 110}]}]}`.
+
+`customerPaymentUpdate` changes only a payment's allocations: the list replaces
+them, and an empty list deallocates it. Anything else about a posted payment is
+changed by voiding it (`customerPaymentDelete`) and entering it again. A
+foreign-currency payment that already has allocations cannot be reallocated
+(FrontAccounting would post its exchange difference twice), and a foreign-currency
+payment's `bankAmount` is required; in the bank account's own currency it must
+equal `amount`. `allocationList` reads a customer's cross-referenced allocations,
+and `customerList`'s `balance` reads what it owes: an object (`balance`, `due`,
+`overdue1`, `overdue2`, `currency`), zero on every bucket once the customer is
+settled.
+
+### Emailing invoices
+
+`invoiceEmail(id: [...])` sends each invoice through FrontAccounting's own invoice
+report — the PDF the web UI prints, with any report override your company has —
+to the customer's invoice contact (else its general contact), with the company's
+BCC. Each result says whether FrontAccounting sent it and, if not, why:
+
+```graphql
+mutation { invoiceEmail(id: ["34"]) { id sent recipient messages } }
+```
+
+The report runs in a separate PHP process on the server (`bin/fa-report`), after
+any writes earlier in the same request have committed; the server's PHP must be
+able to send mail (`sendmail_path`).
+
+### The billing flow
+
+```php
+[, $body] = $gql('mutation ($in: [InvoiceCreateInput!]!) { invoiceCreate(input: $in) { id total } }',
+    ['in' => [['orderId' => $order['id'], 'orderVersion' => $order['version'], 'date' => date('Y-m-d')]]],
+    $pair['accessToken']);
+$invoice = $body['data']['invoiceCreate'][0];
+
+$gql('mutation ($ids: [ID!]!) { invoiceEmail(id: $ids) { sent messages } }', ['ids' => [$invoice['id']]], $pair['accessToken']);
+
+$gql('mutation ($in: [CustomerPaymentCreateInput!]!) { customerPaymentCreate(input: $in) { id } }',
+    ['in' => [['customerId' => $customer['id'], 'branchId' => $customer['branches'][0]['id'],
+        'bankAccountId' => 1, 'date' => date('Y-m-d'), 'amount' => $invoice['total'],
+        'allocations' => [['invoiceId' => $invoice['id'], 'amount' => $invoice['total']]]]]],
+    $pair['accessToken']);
+```
 
 ## Generating Types
 
