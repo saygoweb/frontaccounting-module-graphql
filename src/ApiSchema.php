@@ -9,6 +9,9 @@ use FA\GraphQL\Type\Auth\AuthMutations;
 use FA\GraphQL\Type\Auth\AuthPayloadType;
 use FA\GraphQL\Type\CreditStatus\CreditStatusType;
 use FA\GraphQL\Type\Currency\CurrencyType;
+use FA\GraphQL\Type\Customer\CustomerCreateInput;
+use FA\GraphQL\Type\Customer\CustomerType;
+use FA\GraphQL\Type\Customer\CustomerUpdateInput;
 use FA\GraphQL\Type\Location\LocationType;
 use FA\GraphQL\Type\PaymentTerms\PaymentTermsType;
 use FA\GraphQL\Type\SalesArea\SalesAreaType;
@@ -65,6 +68,10 @@ class ApiSchema extends Schema
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
                     // anorm-graphql
+                    GraphQLUtils::createListField('customerList', $this->type(CustomerType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
                     GraphQLUtils::createListField('locationList', $this->type(LocationType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
@@ -112,6 +119,24 @@ class ApiSchema extends Schema
             'mutation' => new ObjectType([
                 'name' => 'Mutation',
                 'fields' => [
+                    // anorm-graphql
+                    GraphQLUtils::createListField('customerCreate', $this->type(CustomerType::class), 'resolveCreate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(CustomerCreateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('customerDelete', $this->type(CustomerType::class), 'resolveDelete')
+                        ->addArgument('id', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('customerUpdate', $this->type(CustomerType::class), 'resolveUpdate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(CustomerUpdateInput::class))))
+                        )
+                        ->build(),
                     'login' => [
                         'type' => Type::nonNull($this->type(AuthPayloadType::class)),
                         'description' => 'Sign in as a FrontAccounting user. Needs no token.',

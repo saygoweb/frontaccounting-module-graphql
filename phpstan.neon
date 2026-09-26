@@ -30,3 +30,13 @@ parameters:
     # front_accounting itself lives at the FA root, not under includes/.
     scanFiles:
         - ../../frontaccounting.php
+        # CustomerService: add_customer, update_customer, delete_customer,
+        # get_customer, get_customer_by_ref (customers_db.inc), add_branch
+        # (branches_db.inc), key_in_foreign_table, get_company_pref
+        # (company_db.inc, loaded by sysprefs.inc).
+        - ../../sales/includes/db/customers_db.inc
+        - ../../sales/includes/db/branches_db.inc
+        - ../../includes/db/crm_contacts_db.inc
+        - ../../admin/db/company_db.inc
+        - ../../includes/banking.inc
+        - ../../includes/db/sql_functions.inc
