@@ -88,3 +88,8 @@ WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3081', REPLACE(`areas`, ';', ','))
 UPDATE `0_security_roles`
 SET `areas` = CONCAT(`areas`, ';769')
 WHERE `role` = 'GraphQL API' AND FIND_IN_SET('769', REPLACE(`areas`, ';', ',')) = 0;
+
+-- The company's From: address for emailed documents (Release 3 spec §6). The demo
+-- company has none; set only when empty, so a real value is never overwritten.
+UPDATE `0_sys_prefs` SET `value` = 'accounts@example.com'
+WHERE `name` = 'email' AND (`value` IS NULL OR `value` = '');

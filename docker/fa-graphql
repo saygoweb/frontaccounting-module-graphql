@@ -607,6 +607,18 @@ cmd_logs() {
     esac
 }
 
+# The stack's caught mail (docker/fa-mail-catcher): what FrontAccounting "sent".
+cmd_mail() {
+    ensure_running
+    case "${1:-list}" in
+        list)  c_exec_user sh -c 'ls -1t /var/mail-catcher/*.eml 2>/dev/null || echo "(no mail)"' ;;
+        show)  [ $# -ge 2 ] || die "usage: fa-graphql mail show <file>"
+               c_exec_user cat "/var/mail-catcher/$(basename "$2")" ;;
+        clear) c_exec_user sh -c 'rm -f /var/mail-catcher/*.eml' ;;
+        *)     die "usage: fa-graphql mail [list|show <file>|clear]" ;;
+    esac
+}
+
 # Deliberately root, unlike the other exec commands: chown is the one thing here
 # that needs to be.
 cmd_perms() {
@@ -713,6 +725,7 @@ Testing and development
   logs [what]        app (default), db, phpmyadmin, errors, all. Follows when
                      attached to a terminal, prints and exits when piped.
   perms              Give vendor/ back to the host user
+  mail [list|show <f>|clear]  Mail the stack caught instead of sending
 
 How it fits together
   FrontAccounting is not a dependency this module can install — it is the
@@ -779,6 +792,7 @@ case "$cmd" in
     ps|status) compose ps "$@" ;;
     info|url) cmd_info ;;
     logs) cmd_logs "$@" ;;
+    mail) cmd_mail "$@" ;;
     perms) cmd_perms ;;
     mysql) cmd_mysql "$@" ;;
     shell|bash) cmd_shell ;;

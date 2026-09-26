@@ -1,0 +1,120 @@
+#!/usr/bin/env php
+<?php
+
+/*
+ * Runs one FrontAccounting report the way its own print links do
+ * (reporting/prn_redirect.php), for InvoiceMailer. It exists because rep107.php
+ * includes session.inc, which the API process can never include (Release 3 spec §6).
+ *
+ * Usage: bin/fa-report 107 <company> <login> <invoice-no> email
+ *
+ * It logs in as <login> through the module's hooks_graphql::authenticate — the
+ * same VerifiedIdentity the API uses for a verified token — so no password is
+ * involved. The caller (InvoiceMailer) is the API, which has already authenticated
+ * and authorised that user. Anyone able to run this script can already run PHP as
+ * the web server's user; it takes no secret and prints none.
+ *
+ * Its last line of output starting with FA_REPORT_RESULT is the result: the
+ * messages FrontAccounting raised, by level. Everything else it prints —
+ * FrontAccounting's HTML on an early exit, warnings — is discarded or ignored.
+ */
+
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit(1);
+}
+
+$faReportArgs = array_slice($argv, 1);
+if (
+    count($faReportArgs) !== 5
+    || $faReportArgs[0] !== '107'
+    || !ctype_digit($faReportArgs[1])
+    || $faReportArgs[2] === ''
+    || !ctype_digit($faReportArgs[3])
+    || $faReportArgs[4] !== 'email'
+) {
+    fwrite(STDERR, "usage: fa-report 107 <company> <login> <invoice-no> email\n");
+    exit(2);
+}
+$faReportCompany = (int) $faReportArgs[1];
+$faReportLogin = $faReportArgs[2];
+$faReportTransNo = (int) $faReportArgs[3];
+
+$faReportModule = dirname(__DIR__);
+require $faReportModule . '/vendor/autoload.php';
+
+$faReportConfig = \FA\GraphQL\Config::fromFile($faReportModule . '/config_graphql.php');
+$faReportRoot = $faReportConfig->faRoot !== '' ? $faReportConfig->faRoot : \FA\GraphQL\Fa\Bootstrap::defaultRoot();
+if ($faReportRoot[0] !== '/') {
+    $faReportRoot = $faReportModule . '/' . $faReportRoot;
+}
+$faReportRoot = realpath($faReportRoot) ?: $faReportRoot;
+
+// The web UI's brute-force counter (Release 1, Checkpoint B I-2): current_user::login()
+// rewrites it on every successful login. Put back exactly as it was.
+$faReportFailLog = $faReportRoot . '/tmp/faillog.php';
+$faReportFailLogBefore = is_file($faReportFailLog) ? (string) file_get_contents($faReportFailLog) : null;
+
+// Registered before session.inc registers end_flush, so it runs first: it collects
+// FrontAccounting's messages, discards whatever FrontAccounting buffered (HTML
+// included), restores the fail log, and writes the one result line.
+register_shutdown_function(function () use ($faReportFailLog, $faReportFailLogBefore) {
+    $levels = [E_USER_ERROR => 'error', E_USER_WARNING => 'warning', E_USER_NOTICE => 'notice'];
+    $collected = [];
+    foreach ((array) ($GLOBALS['messages'] ?? []) as $message) {
+        $level = $levels[$message[0] ?? 0] ?? 'error';
+        $text = trim(html_entity_decode(strip_tags((string) ($message[1] ?? '')), ENT_QUOTES));
+        if ($text !== '') {
+            $collected[] = ['level' => $level, 'text' => $text];
+        }
+    }
+    $fatal = error_get_last();
+    if ($fatal !== null && in_array($fatal['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        $collected[] = ['level' => 'error', 'text' => 'PHP fatal error in the report: ' . $fatal['message']];
+    }
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    if ($faReportFailLogBefore === null) {
+        if (is_file($faReportFailLog)) {
+            @unlink($faReportFailLog);
+        }
+    } elseif (!is_file($faReportFailLog) || file_get_contents($faReportFailLog) !== $faReportFailLogBefore) {
+        @file_put_contents($faReportFailLog, $faReportFailLogBefore);
+    }
+    \FA\GraphQL\Fa\VerifiedIdentity::clear();
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        @session_destroy();
+    }
+    fwrite(STDOUT, 'FA_REPORT_RESULT ' . json_encode(['messages' => $collected]) . "\n");
+});
+
+\FA\GraphQL\Fa\VerifiedIdentity::set($faReportCompany, $faReportLogin);
+
+$_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+$_SERVER['REQUEST_URI'] = $_SERVER['REQUEST_URI'] ?? '/reporting/prn_redirect.php';
+$_GET = [];
+$_COOKIE = [];
+$_POST = [
+    'user_name_entry_field' => $faReportLogin,
+    'password' => '',
+    'company_login_name' => (string) $faReportCompany,
+    'ui_mode' => '1',
+    'REP_ID' => '107',
+    'PARAM_0' => $faReportTransNo . '-' . 10,
+    'PARAM_1' => $faReportTransNo . '-' . 10,
+    'PARAM_2' => '',
+    'PARAM_3' => '1',
+    'PARAM_4' => '',
+    'PARAM_5' => '',
+    'PARAM_6' => '',
+    'PARAM_7' => '0',
+];
+$_REQUEST = $_POST;
+
+// prn_redirect.php and rep107.php use paths relative to reporting/ (upstream's
+// $path_to_root = ".."), and FrontAccounting's variables must be globals: included
+// here, at file scope, not from a function.
+chdir($faReportRoot . '/reporting');
+ob_start();
+include $faReportRoot . '/reporting/prn_redirect.php';

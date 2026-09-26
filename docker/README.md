@@ -122,6 +122,25 @@ checkout, point host generation at it with `ANORM_GRAPHQL_CHECKOUT` (for example
 `ANORM_GRAPHQL_PATH`: the `/opt/anorm-graphql` symlink this section sets up resolves
 only inside the container.
 
+## Mail
+
+Nothing the stack sends leaves it. PHP's `sendmail_path` — for Apache and the CLI
+alike (`docker/php.ini`) — is `docker/fa-mail-catcher`, which keeps each message,
+headers, body and attachments, as one `.eml` file in `/var/mail-catcher` inside the
+container. `invoiceEmail` runs FrontAccounting's invoice report (`rep107`) in a PHP
+CLI child (`bin/fa-report`), and what it "sent" lands there; the email tests read
+and delete only the files they caused.
+
+    docker/fa-graphql mail              # list, newest first
+    docker/fa-graphql mail show <file>  # print one message
+    docker/fa-graphql mail clear        # delete them all
+
+The catcher is part of the image, so a stack built before it needs
+`docker/fa-graphql up --build`; until then the email tests are skipped. The seed
+(`tests/data/seed.sql`) gives the demo company a From: address,
+`accounts@example.com`, when it has none. A live server keeps its own
+`sendmail_path`.
+
 ## A second PHP version
 
 The environment wins over `docker/.env`, so this gives a second stack beside the
@@ -139,4 +158,5 @@ container log and to FrontAccounting's own `tmp/errors.log`:
     docker/fa-graphql logs errors     # FrontAccounting's error log
 
 `docker/fa-graphql` has to be executable in git: `git update-index --chmod=+x
-docker/fa-graphql docker/docker-entrypoint.sh` if `core.fileMode` is false.
+docker/fa-graphql docker/docker-entrypoint.sh docker/fa-mail-catcher bin/fa-report`
+if `core.fileMode` is false.

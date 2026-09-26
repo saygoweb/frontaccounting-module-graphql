@@ -105,6 +105,15 @@ RUN set -eux; \
 COPY php.ini /etc/php/${PHP_VERSION}/apache2/conf.d/zz-fa-graphql.ini
 COPY php.ini /etc/php/${PHP_VERSION}/cli/conf.d/zz-fa-graphql.ini
 
+# Mail from the stack never leaves it: PHP's sendmail_path (php.ini) is this
+# script, which keeps every message as a file for the tests. Writable by Apache
+# (www-data) and by the CLI user alike, and not sticky, so either can clear it.
+COPY fa-mail-catcher /usr/local/bin/fa-mail-catcher
+RUN set -eux; \
+    chmod 0755 /usr/local/bin/fa-mail-catcher; \
+    mkdir -p /var/mail-catcher; \
+    chmod 0777 /var/mail-catcher
+
 # Port 8000, not 80, to match the sibling modules/api stack. tests/Http reaches
 # it as http://localhost:8000 (FA_GRAPHQL_URL), because phpunit runs inside this
 # container. The host port is mapped to it.

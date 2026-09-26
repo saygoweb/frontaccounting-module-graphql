@@ -5,6 +5,8 @@ namespace FA\GraphQL;
 use Anorm\GraphQL\GraphQLUtils;
 use Anorm\GraphQL\Type\MangoInput;
 use DI\Container;
+use FA\GraphQL\Auth\Guard;
+use FA\GraphQL\Fa\Service\InvoiceMailer;
 use FA\GraphQL\Type\Allocation\AllocationType;
 use FA\GraphQL\Type\Auth\AuthMutations;
 use FA\GraphQL\Type\Auth\AuthPayloadType;
@@ -28,6 +30,7 @@ use FA\GraphQL\Type\Delivery\DeliveryCreateInput;
 use FA\GraphQL\Type\Delivery\DeliveryType;
 use FA\GraphQL\Type\InvoiceLine\InvoiceLineType;
 use FA\GraphQL\Type\Invoice\InvoiceCreateInput;
+use FA\GraphQL\Type\Invoice\InvoiceEmailResultType;
 use FA\GraphQL\Type\Invoice\InvoiceType;
 use FA\GraphQL\Type\Location\LocationType;
 use FA\GraphQL\Type\PaymentTerms\PaymentTermsType;
@@ -302,6 +305,22 @@ class ApiSchema extends Schema
                     GraphQLUtils::createListField('invoiceDelete', $this->type(InvoiceType::class), 'resolveDelete')
                         ->addArgument('id', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
                         ->build(),
+                    'invoiceEmail' => [
+                        'type' => Type::nonNull(
+                            Type::listOf(Type::nonNull($this->type(InvoiceEmailResultType::class)))
+                        ),
+                        'description' => "Email invoices through FrontAccounting's invoice report, to each "
+                            . "customer's invoice (else general) contact. Runs after any writes in the same "
+                            . 'request have committed.',
+                        'args' => [
+                            'id' => ['type' => Type::nonNull(Type::listOf(Type::nonNull(Type::id())))],
+                        ],
+                        'resolve' => function ($root, array $args) {
+                            Guard::require('SA_SALESTRANSVIEW');
+                            Guard::require('SA_SALESINVOICE');
+                            return $this->type(InvoiceMailer::class)->send($args['id']);
+                        },
+                    ],
                     'login' => [
                         'type' => Type::nonNull($this->type(AuthPayloadType::class)),
                         'description' => 'Sign in as a FrontAccounting user. Needs no token.',

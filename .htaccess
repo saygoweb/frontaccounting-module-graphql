@@ -6,7 +6,7 @@ RewriteEngine on
 # denied too: the file existing on disk would otherwise skip the routing rule
 # below and Apache would serve it, secret included.
 RewriteRule ^config_graphql - [F,L]
-RewriteRule ^(sql|src|tests|vendor|docs|docker|tmp)/ - [F,L]
+RewriteRule ^(bin|sql|src|tests|vendor|docs|docker|tmp)/ - [F,L]
 RewriteRule ^(container|hooks)\.php$ - [F,L]
 
 # Dot-files and dot-directories (.git/, .env, .superpowers/, .phpunit.result.cache,

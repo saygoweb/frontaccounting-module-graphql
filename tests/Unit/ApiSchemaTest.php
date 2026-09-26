@@ -74,7 +74,8 @@ class ApiSchemaTest extends TestCase
                 'branchCreate', 'branchDelete', 'branchUpdate', 'contactCreate', 'contactDelete', 'contactUpdate',
                 'customerCreate', 'customerDelete', 'customerPaymentCreate', 'customerPaymentDelete',
                 'customerPaymentUpdate', 'customerUpdate', 'deliveryCreate', 'deliveryDelete',
-                'invoiceCreate', 'invoiceDelete', 'login', 'salesOrderCreate', 'salesOrderDelete', 'salesOrderUpdate',
+                'invoiceCreate', 'invoiceDelete', 'invoiceEmail', 'login', 'salesOrderCreate', 'salesOrderDelete',
+                'salesOrderUpdate',
                 'tokenRefresh', 'tokenRevoke',
             ],
             array_keys($schema->getMutationType()->getFields())
