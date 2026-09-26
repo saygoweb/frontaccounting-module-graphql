@@ -20,7 +20,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # Entities generated without mutations, comma-separated.
-READONLY="SalesType,PaymentTerms,TaxGroup,SalesArea,Salesman,Location,Shipper,CreditStatus,Currency,StockItem,SalesOrderLine,BankAccount,DeliveryLine,InvoiceLine"
+READONLY="SalesType,PaymentTerms,TaxGroup,SalesArea,Salesman,Location,Shipper,CreditStatus,Currency,StockItem,SalesOrderLine,BankAccount,DeliveryLine,InvoiceLine,Allocation"
 # Entities that get only their Input(s), to nest in another entity's input: no
 # Type mutations and no ApiSchema entries of their own. Comma-separated.
 INPUT_ONLY="SalesOrderLine,DeliveryLine"
