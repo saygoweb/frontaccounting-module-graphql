@@ -58,8 +58,34 @@ class StackTest extends TestCase
         $this->assertSame(['apitest', 'noapi'], array_keys($rows));
         $this->assertContains('91236', explode(';', $rows['apitest']));
         $this->assertNotContains('91236', explode(';', $rows['noapi']));
-        // SA_SALESTYPES = SS_SALES_C | 1 = (11 << 8) | 1: the SalesType pilot's list area.
-        $this->assertContains('2817', explode(';', $rows['apitest']));
+        // SA_SALESORDER = SS_SALES | 3 = (12 << 8) | 3: every lookup lists with it
+        // (Release 2 spec section 4.2).
+        $this->assertContains('3075', explode(';', $rows['apitest']));
+    }
+
+    private function pdo(): \PDO
+    {
+        return new \PDO(
+            'mysql:host=' . getenv('FA_DB_HOST') . ';dbname=' . getenv('FA_DB_NAME'),
+            (string) getenv('FA_DB_USER'),
+            (string) getenv('FA_DB_PASSWORD')
+        );
+    }
+
+    /**
+     * Release 2 spec section 7: the installer datasets end with fiscal 2022, and a
+     * document dated today needs a fiscal year around today. db load adds them.
+     */
+    public function testTodayIsInsideTheCurrentFiscalYear(): void
+    {
+        $prefix = (string) getenv('FA_DB_PREFIX');
+        $covering = $this->pdo()->query(
+            "SELECT id FROM {$prefix}fiscal_year WHERE `begin` <= CURDATE() AND `end` >= CURDATE()"
+        )->fetchColumn();
+        $current = $this->pdo()->query("SELECT value FROM {$prefix}sys_prefs WHERE name = 'f_year'")->fetchColumn();
+
+        $this->assertNotFalse($covering, 'no fiscal year covers today');
+        $this->assertSame((string) $covering, (string) $current);
     }
 
     public function testConfigAndSqlAreNotServed(): void

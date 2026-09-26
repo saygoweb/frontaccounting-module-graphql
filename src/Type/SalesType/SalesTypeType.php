@@ -19,13 +19,14 @@ use FA\GraphQL\Type\SalesType\Base\SalesTypeTypeBase;
 class SalesTypeType extends SalesTypeTypeBase
 {
     /**
-     * Read-only: listing is the only verb. Anything else is Forbidden by FaModelType
-     * even if a mutation were ever wired to it.
+     * Read-only: listing is the only verb, and it needs the area of the work the
+     * lookup serves — taking orders — not FrontAccounting's setup area for this table,
+     * which grants editing it in the web UI (Release 2 spec section 4.2).
      *
      * @return array<string, string>
      */
     protected function areas(): array
     {
-        return ['list' => 'SA_SALESTYPES'];
+        return ['list' => 'SA_SALESORDER'];
     }
 }

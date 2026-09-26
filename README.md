@@ -3,8 +3,8 @@
 A GraphQL API for [FrontAccounting](https://frontaccounting.com/), delivered as a
 module (extension) that lives at `modules/graphql` inside a FrontAccounting tree.
 
-**Status: Foundation.** Authentication, the FrontAccounting session and Type
-generation work end to end. One generated entity so far: `SalesType`, read-only.
+**Status: Release 2.** Lookups, customers, branches, contacts and sales orders with
+recurring schedules. Generating and sending recurring invoices is Release 3.
 
 ## Calling the API
 
@@ -64,6 +64,105 @@ Generated lists take an optional Mango query:
     $pair['accessToken']
 );
 ```
+
+### Reference lookups
+
+Read-only lists of what an order needs, for any role holding **Sales orders
+edition** (`SA_SALESORDER`). FrontAccounting's setup areas are not needed:
+`paymentTermsList`, `taxGroupList`, `salesAreaList`, `salesmanList`,
+`locationList`, `shipperList`, `creditStatusList`, `currencyList`,
+`stockItemList`, `salesTypeList`. Each takes an optional Mango `query`. A sellable
+item is one with `mbFlag` not `F`, and neither `inactive` nor `noSale`.
+
+### Customers, branches and contacts
+
+`customerCreate`, `customerUpdate`, `customerDelete`; `branchCreate`, …;
+`contactCreate`, … (role area **Sales customer and branches changes**,
+`SA_CUSTOMER`). Every mutation takes a list and runs it in one transaction:
+either the whole list is written or none of it, and a refusal names the item in
+`extensions.index`. Create inputs have no `id`; update inputs require it, and
+fields you leave out are left unchanged.
+
+`customerCreate` does what FrontAccounting's customer page does. With the
+company's *auto create branch* setting on (the default), it needs `branch`
+defaults and creates the customer's first branch. `contact` creates the CRM
+contact linked to the customer and that branch. Percentages are 0–100.
+
+### Sales orders
+
+`salesOrderCreate`, `salesOrderUpdate`, `salesOrderDelete`, `salesOrderList`
+(**Sales orders edition** to write, **Sales transactions view** to read), and
+`salesOrderLineList`, a read-only list of order lines (**Sales transactions
+view**); lines are written through their order. An
+order takes its customer's and branch's defaults (price list, payment terms,
+delivery address, location, shipper) unless you give them. A line's price
+defaults to the price list's. Dates are `YYYY-MM-DD`.
+
+- **Updates carry `version`**, the one you last read. If the order changed since,
+  the update is refused (`FA_REJECTED`): read it again and retry. `lines`, when
+  given, replaces the order's lines. A line with an `id` is updated, one without
+  is added, and one left out is removed. A delivered line can't be removed or
+  reduced below what was delivered. Once anything is delivered or invoiced, the
+  customer, branch, price list, date, payment terms and prepayment are fixed.
+- **Order ids come round again.** FrontAccounting gives a new order the number
+  after the highest one, so when the newest order is deleted its id goes to the
+  next order, which starts again at version 0. A client that keeps an order's id
+  should check the order's `customerId` when it reads it back or before it
+  updates it.
+- **`salesOrderDelete` is FrontAccounting's *cancel order*.** An order with no
+  deliveries is deleted. One with deliveries is closed instead: its quantities
+  are cut to what was delivered, and it stays readable.
+- FrontAccounting's warnings (for example, a price below cost) don't fail the
+  mutation. They arrive in the response's top-level `extensions.warnings`.
+
+### Recurring orders
+
+With the `sgw_sales` extension active, an order can recur:
+
+```graphql
+recurring: { start: "2026-10-01", repeats: MONTH, every: 1, day: 1 }
+```
+
+`repeats` is `MONTH` (with `day`, 1–31) or `YEAR` (with `monthDay`, `"MM-DD"`).
+To end a schedule, update the order with `recurring: { …, end: "2027-09-30" }`.
+The schedule is written in the same transaction as its order: deleting the order
+deletes it, and closing the order ends it. Without `sgw_sales`, `recurring` is
+refused (`BAD_INPUT`) and always reads `null`. A recurring order keeps its
+header editable once invoices have been generated from it, and its quantities
+may drop below what was delivered, as `sgw_sales`' own page allows: each
+generated invoice raises the delivered quantity. Generating the recurring invoices
+comes in a later release.
+
+### The panel's flow
+
+```php
+[, $body] = $gql(
+    'mutation ($in: [CustomerCreateInput!]!) { customerCreate(input: $in) { id branches { id } } }',
+    ['in' => [[
+        'name' => 'Example Sdn Bhd', 'ref' => 'EXAMPLE', 'address' => "1 Jalan Contoh\nKuala Lumpur",
+        'salesTypeId' => 1, 'paymentTermsId' => 1, 'creditStatusId' => 1,
+        'branch' => ['salesmanId' => 1, 'salesAreaId' => 1, 'taxGroupId' => 1, 'locationId' => 'DEF', 'shipperId' => 1],
+        'contact' => ['email' => 'billing@example.com'],
+    ]]],
+    $pair['accessToken']
+);
+$customer = $body['data']['customerCreate'][0];
+
+[, $body] = $gql(
+    'mutation ($in: [SalesOrderCreateInput!]!) { salesOrderCreate(input: $in) { id version } }',
+    ['in' => [[
+        'customerId' => $customer['id'], 'branchId' => $customer['branches'][0]['id'],
+        'orderDate' => date('Y-m-d'),
+        'lines' => [['stockId' => 'HOSTING-M', 'quantity' => 1]],
+        'recurring' => ['start' => date('Y-m-d'), 'repeats' => 'MONTH', 'every' => 1, 'day' => 1],
+    ]]],
+    $pair['accessToken']
+);
+$order = $body['data']['salesOrderCreate'][0];   // keep $order['version'] for updates
+```
+
+`HOSTING-M` is illustrative: use a stock id from your own items (the demo
+company has none by that name).
 
 ## Generating Types
 

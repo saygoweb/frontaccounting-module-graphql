@@ -79,6 +79,20 @@ final class Bootstrap
         return self::$booted;
     }
 
+    /**
+     * Includes one more FrontAccounting file after boot, as though from file scope
+     * (see includeGlobal()). For the write paths — sales/includes/sales_db.inc,
+     * includes/db/crm_contacts_db.inc, ... — that no request needs until it writes.
+     * include_once: calling it twice is free.
+     */
+    public static function includeFa(string $relativePath): void
+    {
+        if (!self::$booted) {
+            throw new \LogicException("FrontAccounting is not booted, so $relativePath cannot be included.");
+        }
+        self::includeGlobal($GLOBALS['path_to_root'] . '/' . ltrim($relativePath, '/'));
+    }
+
     public static function defaultRoot(): string
     {
         return dirname(__DIR__, 4);

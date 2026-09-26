@@ -400,6 +400,34 @@ db_has_table() {
 # statement) turn out to be idempotent as written when tested by hand — but that
 # block is still guarded on the table not existing yet, both as a cheap skip on
 # every later `db load` and belt-and-braces should a future update_*.sql not be.
+# FrontAccounting will not post a document dated outside a fiscal year, and a new
+# Cart's default date falls back to the end of the current fiscal year when today is
+# outside every one (sales/includes/cart_class.inc). The installer datasets end with
+# fiscal 2022. Years are added after the last one, each a calendar year long, until
+# today is inside one, and that one is made current. Ported from sgw_sales'
+# docker/fa-sgw-sales; idempotent.
+ensure_fiscal_year() {
+    local fy="\`${DB_PREFIX}fiscal_year\`" covered added=0
+    while :; do
+        covered="$(db_mysql -N -B "$DB_NAME" -e \
+            "SELECT COUNT(*) FROM $fy WHERE \`begin\` <= CURDATE() AND \`end\` >= CURDATE()" 2>/dev/null)" || return 0
+        [ "${covered:-1}" = 0 ] || break
+        # An empty table has no last year to follow, and twenty is a dataset
+        # nobody should be extending a year at a time.
+        [ "$added" -lt 20 ] || break
+        db_mysql "$DB_NAME" -e \
+            "INSERT INTO $fy (\`begin\`, \`end\`, closed)
+             SELECT MAX(\`end\`) + INTERVAL 1 DAY, MAX(\`end\`) + INTERVAL 1 YEAR, 0 FROM $fy HAVING MAX(\`end\`) IS NOT NULL" || return 0
+        added=$((added + 1))
+    done
+    [ "$added" -gt 0 ] || return 0
+    db_mysql "$DB_NAME" -e \
+        "UPDATE \`${DB_PREFIX}sys_prefs\` SET value =
+            (SELECT id FROM $fy WHERE \`begin\` <= CURDATE() AND \`end\` >= CURDATE() LIMIT 1)
+          WHERE name = 'f_year'"
+    info "added $added fiscal year(s) so that today can be posted to"
+}
+
 db_post_load() {
     local f
     for f in "$PROJECT_ROOT"/sql/update_*.sql; do
@@ -413,6 +441,7 @@ db_post_load() {
             c_exec cat "$FA_DIR/modules/sgw_sales/sql/$f" | ext_sql_filter | db_mysql "$DB_NAME"
         done
     fi
+    ensure_fiscal_year
     info "applying tests/data/seed.sql"
     prefix_filter < "$PROJECT_ROOT/tests/data/seed.sql" | db_mysql "$DB_NAME"
 }
@@ -618,7 +647,7 @@ cmd_info() {
   Database      $DB_NAME as $DB_USER, tables prefixed '$DB_PREFIX'
                 from the host: mysql -h 127.0.0.1 -P ${DB_PORT} -u $DB_USER -p$DB_PASSWORD $DB_NAME
 
-  Logins        apitest / password (GraphQL API role, SA_GRAPHQL + SA_SALESTYPES)
+  Logins        apitest / password (GraphQL API role: SA_GRAPHQL, SA_SALESORDER, SA_CUSTOMER)
                 noapi / password   (System Administrator, no SA_GRAPHQL)
 
   This checkout $PROJECT_ROOT -> $APP_DIR

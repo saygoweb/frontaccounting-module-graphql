@@ -19,8 +19,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Entities generated without an Input or mutations, comma-separated.
-READONLY="SalesType"
+# Entities generated without mutations, comma-separated.
+READONLY="SalesType,PaymentTerms,TaxGroup,SalesArea,Salesman,Location,Shipper,CreditStatus,Currency,StockItem,SalesOrderLine"
+# Entities that get only their Input(s), to nest in another entity's input: no
+# Type mutations and no ApiSchema entries of their own. Comma-separated.
+INPUT_ONLY="SalesOrderLine"
 
 if [ -n "${ANORM_GRAPHQL_CHECKOUT:-}" ]; then
     GENERATOR=(php -d "auto_prepend_file=$ROOT/vendor/autoload.php" "$ANORM_GRAPHQL_CHECKOUT/bin/anorm-graphql.php")
@@ -28,16 +31,23 @@ else
     GENERATOR=(php "$ROOT/vendor/bin/anorm-graphql.php")
 fi
 
+# create-update: FrontAccounting's entities are created and updated by different
+# functions with different rules (Release 2 spec section 4.1), so a writable entity
+# gets <entity>Create and <entity>Update, not one <entity>Upsert.
 ARGS=(make
     -m src/Model -n 'FA\GraphQL\Model'
     -o src/Type -t 'FA\GraphQL\Type'
     --tests tests/Generated --test-ns 'FA\GraphQL\Tests\Generated'
     -s src/ApiSchema.php --schema-ns 'FA\GraphQL'
-    --type-base 'FA\GraphQL\Type\FaModelType')
-# --readonly naming a model that does not exist is an error (exit 2), so it is passed
-# only when there is something to name.
+    --type-base 'FA\GraphQL\Type\FaModelType'
+    --mutations create-update)
+# --readonly or --input-only naming a model that does not exist is an error (exit 2),
+# so each is passed only when there is something to name.
 if [ -n "$READONLY" ]; then
     ARGS+=(--readonly "$READONLY")
+fi
+if [ -n "$INPUT_ONLY" ]; then
+    ARGS+=(--input-only "$INPUT_ONLY")
 fi
 
 exec "${GENERATOR[@]}" "${ARGS[@]}" "$@"

@@ -139,6 +139,16 @@ class FaSession implements SessionGate
         return (int) $_SESSION['wa_current_user']->user;
     }
 
+    /**
+     * Whether an extension is active for the open company: install_hooks() puts it in
+     * $Hooks only when it is active there and its hooks class exists
+     * (includes/hooks.inc). False until a company is open (Release 2 spec section 3.3).
+     */
+    public function isActive(string $package): bool
+    {
+        return CompanyContext::isSet() && isset($GLOBALS['Hooks'][$package]);
+    }
+
     private function finish(): void
     {
         if (!$_SESSION['wa_current_user']->can_access('SA_GRAPHQL')) {

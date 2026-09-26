@@ -36,4 +36,30 @@ class ApiErrorTest extends TestCase
         $this->assertTrue($error->isClientSafe());
         $this->assertSame($code, $error->getExtensions()['code']);
     }
+
+    public function testARefusalOfOurOwnCarriesItsMessageInMessages(): void
+    {
+        // Release 2 spec section 5: FA_REJECTED carries its messages in
+        // extensions.messages, the guards of this module's services included.
+        $this->assertSame(['Guarded.'], (new FaRejected('Guarded.'))->getExtensions()['messages']);
+        $this->assertSame(['a', 'b'], (new FaRejected('a', ['a', 'b']))->getExtensions()['messages']);
+    }
+
+    public function testRefusalsAndNotFoundNameTheirBatchIndex(): void
+    {
+        $rejected = (new FaRejected('Guarded.', ['Guarded.']))->withIndex(2);
+        $this->assertSame(2, $rejected->index());
+        $this->assertSame('Guarded.', $rejected->getMessage());
+        $this->assertSame(
+            ['code' => 'FA_REJECTED', 'messages' => ['Guarded.'], 'index' => 2],
+            $rejected->getExtensions()
+        );
+
+        $missing = (new NotFound('Customer id 9 not found'))->withIndex(1);
+        $this->assertSame(1, $missing->index());
+        $this->assertSame('Customer id 9 not found', $missing->getMessage());
+        $this->assertSame(['code' => 'NOT_FOUND', 'index' => 1], $missing->getExtensions());
+        $this->assertNull((new NotFound('x'))->index());
+        $this->assertSame(['code' => 'NOT_FOUND'], (new NotFound('x'))->getExtensions());
+    }
 }

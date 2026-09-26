@@ -30,3 +30,25 @@ parameters:
     # front_accounting itself lives at the FA root, not under includes/.
     scanFiles:
         - ../../frontaccounting.php
+        # CustomerService: add_customer, update_customer, delete_customer,
+        # get_customer, get_customer_by_ref (customers_db.inc), add_branch
+        # (branches_db.inc), key_in_foreign_table, get_company_pref
+        # (company_db.inc, loaded by sysprefs.inc).
+        - ../../sales/includes/db/customers_db.inc
+        - ../../sales/includes/db/branches_db.inc
+        - ../../includes/db/crm_contacts_db.inc
+        - ../../admin/db/company_db.inc
+        - ../../includes/banking.inc
+        - ../../includes/db/sql_functions.inc
+        # SalesOrderService: the Cart and what it is filled with (cart_class.inc,
+        # sales_order_ui.inc, sales_order_db.inc, sales_db.inc, sales_types_db.inc),
+        # items and locations, fiscal years, shippers, costs.
+        - ../../sales/includes/cart_class.inc
+        - ../../sales/includes/ui/sales_order_ui.inc
+        - ../../sales/includes/db/sales_order_db.inc
+        - ../../sales/includes/sales_db.inc
+        - ../../sales/includes/db/sales_types_db.inc
+        - ../../inventory/includes/db/items_codes_db.inc
+        - ../../inventory/includes/db/items_locations_db.inc
+        - ../../admin/db/fiscalyears_db.inc
+        - ../../admin/db/shipping_db.inc
