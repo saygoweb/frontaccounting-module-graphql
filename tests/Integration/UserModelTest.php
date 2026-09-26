@@ -44,4 +44,13 @@ class UserModelTest extends FaTestCase
     {
         $this->assertNull(UserModel::findById($this->pdo(), 31999));
     }
+
+    public function testFindByLogin(): void
+    {
+        $user = UserModel::findByLogin($this->pdo(), 'apitest');
+
+        $this->assertSame('apitest', $user->login);
+        $this->assertNull(UserModel::findByLogin($this->pdo(), 'no-such-user'));
+        $this->assertNull(UserModel::findByLogin($this->pdo(), "' OR '1'='1"));
+    }
 }

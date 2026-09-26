@@ -16,10 +16,16 @@ use Lcobucci\JWT\Validation\Constraint\SignedWith;
 /**
  * Access tokens: HS256, never stored. The company travels in the token so that a
  * request can never choose its own.
+ *
+ * Machine tokens (spec §3.7) are the same token with `typ: "machine"` and a long
+ * life, capped by machine_ttl_max. Verifying one here checks only the signature and
+ * claims; that its jti is still live is Authenticator's to ask (MachineTokenCheck).
  */
 class TokenService
 {
     private const LEEWAY = 'PT5S';
+
+    public const TYPE_MACHINE = 'machine';
 
     private Config $config;
     private Clock $clock;
@@ -53,6 +59,46 @@ class TokenService
             ->toString();
     }
 
+    /**
+     * A machine token living $lifetime seconds. Only bin/fa-token issues these, by
+     * way of MachineTokenService, which stores its jti: a machine token whose jti is
+     * not stored is refused on use.
+     *
+     * @throws \InvalidArgumentException $lifetime is not positive or is longer than machine_ttl_max
+     */
+    public function issueMachine(int $company, string $login, int $lifetime): IssuedMachineToken
+    {
+        if ($lifetime < 1) {
+            throw new \InvalidArgumentException('A machine token must live at least one second.');
+        }
+        if ($lifetime > $this->config->machineTtlMax) {
+            throw new \InvalidArgumentException(sprintf(
+                'A machine token may live at most %d seconds (machine_ttl_max); %d were asked for.',
+                $this->config->machineTtlMax,
+                $lifetime
+            ));
+        }
+        // Whole seconds, so the stored row and the token's claims agree exactly.
+        $now = $this->clock->now();
+        $now = $now->setTimestamp($now->getTimestamp());
+        $expires = $now->modify('+' . $lifetime . ' seconds');
+        $jti = bin2hex(random_bytes(16));
+
+        $token = $this->jwt->builder()
+            ->issuedBy($this->config->issuer)
+            ->identifiedBy($jti)
+            ->relatedTo($login)
+            ->withClaim('coy', $company)
+            ->withClaim('typ', self::TYPE_MACHINE)
+            ->issuedAt($now)
+            ->canOnlyBeUsedAfter($now)
+            ->expiresAt($expires)
+            ->getToken($this->jwt->signer(), $this->jwt->signingKey())
+            ->toString();
+
+        return new IssuedMachineToken($token, $jti, $now, $expires);
+    }
+
     public function verify(string $jwt): Claims
     {
         try {
@@ -84,6 +130,17 @@ class TokenService
             throw new InvalidToken('The access token is missing a required claim.');
         }
 
-        return new Claims($company, $login, (string) $claims->get('jti', ''), $expires);
+        // No typ: an access token. "machine": a machine token, which is only as
+        // good as its jti, so it must have one. Anything else was not issued here.
+        $machine = $claims->has('typ');
+        if ($machine && $claims->get('typ') !== self::TYPE_MACHINE) {
+            throw new InvalidToken('The access token is of an unknown type.');
+        }
+        $jti = $claims->get('jti', '');
+        if ($machine && (!is_string($jti) || $jti === '')) {
+            throw new InvalidToken('The access token is missing a required claim.');
+        }
+
+        return new Claims($company, $login, is_scalar($jti) ? (string) $jti : '', $expires, $machine);
     }
 }

@@ -15,6 +15,10 @@ return array(
     // 'access_ttl' => 900,            // seconds
     // 'refresh_ttl' => 2592000,       // seconds, 30 days
 
+    // The longest a machine token (bin/fa-token issue) may live. bin/fa-token
+    // refuses to issue one for longer.
+    // 'machine_ttl_max' => 31536000,  // seconds, 365 days
+
     // FrontAccounting stores passwords as unsalted MD5, so `login` is refused over
     // plain HTTP unless this is true. Leave it false in production.
     // 'allow_insecure_login' => false,

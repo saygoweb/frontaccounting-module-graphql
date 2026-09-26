@@ -23,6 +23,39 @@ class ConfigTest extends TestCase
         $this->assertSame(12, $config->maxDepth);
         $this->assertSame(2000, $config->maxComplexity);
         $this->assertSame(1048576, $config->maxBodyBytes);
+        $this->assertSame(31536000, $config->machineTtlMax);
+    }
+
+    public function testMachineTtlMaxCanBeLowered(): void
+    {
+        $config = Config::fromArray(['secret' => self::SECRET, 'machine_ttl_max' => 86400]);
+
+        $this->assertSame(86400, $config->machineTtlMax);
+    }
+
+    /**
+     * @return array<string, array{0: mixed}>
+     */
+    public function badMachineTtlMax(): array
+    {
+        return [
+            'zero' => [0],
+            'negative' => [-1],
+            'a string' => ['31536000'],
+            'a float' => [3.5],
+            'null' => [null],
+        ];
+    }
+
+    /**
+     * @dataProvider badMachineTtlMax
+     * @param mixed $value
+     */
+    public function testMachineTtlMaxMustBeAPositiveInteger($value): void
+    {
+        $this->expectException(ConfigException::class);
+        $this->expectExceptionMessage('machine_ttl_max');
+        Config::fromArray(['secret' => self::SECRET, 'machine_ttl_max' => $value]);
     }
 
     public function testOverrides(): void

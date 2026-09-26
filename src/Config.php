@@ -20,6 +20,7 @@ final class Config
         'max_complexity' => 2000,
         'max_body_bytes' => 1048576,
         'fa_root' => '',
+        'machine_ttl_max' => 31536000,
     ];
 
     public string $secret;
@@ -33,6 +34,8 @@ final class Config
     public int $maxComplexity;
     public int $maxBodyBytes;
     public string $faRoot;
+    /** The longest a machine token may live, in seconds (spec §3.7). */
+    public int $machineTtlMax;
 
     private function __construct()
     {
@@ -70,7 +73,8 @@ final class Config
         if (strlen($v['secret']) < 32) {
             throw new ConfigException('The configured secret must be at least 32 bytes.');
         }
-        foreach (['access_ttl', 'refresh_ttl', 'max_depth', 'max_complexity', 'max_body_bytes'] as $key) {
+        $ints = ['access_ttl', 'refresh_ttl', 'max_depth', 'max_complexity', 'max_body_bytes', 'machine_ttl_max'];
+        foreach ($ints as $key) {
             if (!is_int($v[$key]) || $v[$key] < 1) {
                 throw new ConfigException("Configuration key $key must be a positive integer.");
             }
@@ -93,6 +97,7 @@ final class Config
         $config->maxComplexity = $v['max_complexity'];
         $config->maxBodyBytes = $v['max_body_bytes'];
         $config->faRoot = (string) $v['fa_root'];
+        $config->machineTtlMax = $v['machine_ttl_max'];
 
         return $config;
     }

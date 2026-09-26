@@ -75,6 +75,7 @@ line), then `tests/data/seed.sql`. That seed adds a `GraphQL API` role holding
 | `apitest` | `password` | `GraphQL API` (System Administrator's areas, `SA_GRAPHQL`, `SA_SALESORDER`, `SA_CUSTOMER`) |
 | `noapi` | `password` | System Administrator (no `SA_GRAPHQL`) |
 | `apiorders` | `password` | `GraphQL Orders` (`SA_GRAPHQL`, `SA_SALESTRANSVIEW`, `SA_SALESORDER` only) |
+| `sgwpanel` | none (unusable) | `GraphQL Panel` (`SA_GRAPHQL`, `SA_SALESTRANSVIEW`, `SA_CUSTOMER`, `SA_SALESORDER` only) — signs in with a machine token: `docker/fa-graphql exec bin/fa-token issue --company 0 --user sgwpanel --days 365 --label dev` |
 
 The whole sequence is idempotent, so a repeated `db load` (or `up` against an
 already-seeded volume) is safe.

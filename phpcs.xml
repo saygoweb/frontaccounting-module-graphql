@@ -11,7 +11,7 @@
     <file>index.php</file>
     <file>app.php</file>
     <file>container.php</file>
-    <!-- bin/fa-report has no extension, and phpcs skips such a file even when it
+    <!-- bin/fa-report and bin/fa-token have no extension, and phpcs skips such a file even when it
          is named here: composer's cs:check pipes it in as stdin with a .php
          stdin-path instead. -->
 

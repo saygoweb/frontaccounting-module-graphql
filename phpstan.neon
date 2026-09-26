@@ -13,6 +13,7 @@ parameters:
         - container.php
         - index.php
         - bin/fa-report
+        - bin/fa-token
 
     # FrontAccounting's own code, byte for byte (it still calls
     # get_magic_quotes_gpc() behind a PHP < 5.4 check). FrontAccounting is

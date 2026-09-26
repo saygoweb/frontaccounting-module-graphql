@@ -54,4 +54,11 @@ class UserModel extends Model
 
         return $user instanceof self ? $user : null;
     }
+
+    public static function findByLogin(\PDO $pdo, string $login): ?self
+    {
+        $user = DataMapper::find(self::class, $pdo)->where('`user_id` = :login', [':login' => $login])->one();
+
+        return $user instanceof self ? $user : null;
+    }
 }
