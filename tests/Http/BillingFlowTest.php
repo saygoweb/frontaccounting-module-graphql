@@ -11,7 +11,9 @@ use PHPUnit\Framework\TestCase;
 /**
  * The panel's billing flow end to end (Release 3 spec §8): invoice an order in one
  * step, email it, take a payment allocated to it, deallocate, void the payment,
- * void the invoice; the partial-delivery path; and who may do it.
+ * void the invoice; the partial-delivery path; who may do it; and the document lock
+ * (spec §2.1): concurrent payments get distinct numbers, and every document write
+ * waits on the lock.
  *
  * tearDown removes everything a test wrote, pass or fail — customers by the test's
  * reference prefix (FaTestRows), orders (FaOrderRows), every billing row written
@@ -235,6 +237,188 @@ class BillingFlowTest extends TestCase
 
         $response = $this->gql(self::INVOICE_EMAIL, ['ids' => [1]], $orders);
         $this->assertSame('FORBIDDEN', $this->code($response), $response['raw']);
+    }
+
+    /**
+     * Release 3 spec §2.1 and §8: two payments posted at once, by two requests on two
+     * connections, get distinct numbers and both commit. The test holds the document
+     * lock while both requests start, so both are provably in flight together —
+     * waiting on it — before it lets them race for it.
+     */
+    public function testConcurrentPaymentsGetDistinctNumbers(): void
+    {
+        $customers = [$this->createCustomer(), $this->createCustomer()];
+        $payload = function (array $customer): array {
+            return [self::PAYMENT_CREATE, ['in' => [[
+                'customerId' => $customer['id'],
+                'branchId' => $customer['branches'][0]['id'],
+                'bankAccountId' => self::BANK_ACCOUNT,
+                'date' => $this->today(),
+                'amount' => 10.0,
+            ]]]];
+        };
+
+        $run = $this->whileTheDocumentLockIsHeld([$payload($customers[0]), $payload($customers[1])], true);
+
+        $this->assertTrue($run['waited'], 'both requests must wait on the document lock together');
+        $ids = [];
+        foreach ($run['responses'] as $index => $response) {
+            $this->assertSame(200, $response['status'], $response['raw']);
+            $this->assertArrayNotHasKey('errors', $response['body'], $response['raw']);
+            $ids[$index] = (int) $response['body']['data']['customerPaymentCreate'][0]['id'];
+        }
+        $this->assertNotSame($ids[0], $ids[1], 'two payments, two numbers');
+
+        // Both committed, each for its own customer.
+        $statement = $this->pdo()->prepare(
+            'SELECT trans_no, debtor_no FROM ' . $this->table('debtor_trans')
+            . ' WHERE type = 12 AND trans_no IN (?, ?) ORDER BY trans_no'
+        );
+        $statement->execute([$ids[0], $ids[1]]);
+        $rows = $statement->fetchAll(\PDO::FETCH_KEY_PAIR);
+        $this->assertSame((string) $customers[0]['id'], (string) ($rows[$ids[0]] ?? ''));
+        $this->assertSame((string) $customers[1]['id'], (string) ($rows[$ids[1]] ?? ''));
+    }
+
+    /**
+     * Every document write takes the document lock (spec §2.1): while another
+     * connection holds it, each of the seven write mutations waits on it — all seven
+     * are seen waiting at once — and gives up after its 10 seconds as busy.
+     *
+     * Each request is one FrontAccounting would refuse if it ran, so a mutation that
+     * skipped the lock writes nothing, answers with a different error, and fails
+     * the test.
+     */
+    public function testEveryDocumentWriteWaitsForTheLockAndIsRefusedAsBusy(): void
+    {
+        // An invoiced delivery and an allocated invoice: neither can be voided.
+        $customer = $this->createCustomer();
+        $order = $this->createOrder($customer, 1, 20.0);
+        $invoice = $this->ok(self::INVOICE_CREATE, ['in' => [[
+            'orderId' => $order['id'], 'orderVersion' => $order['version'], 'date' => $this->today(),
+        ]]])['invoiceCreate'][0];
+        $total = (float) $invoice['total'];
+        $this->ok(self::PAYMENT_CREATE, ['in' => [[
+            'customerId' => $customer['id'],
+            'branchId' => $customer['branches'][0]['id'],
+            'bankAccountId' => self::BANK_ACCOUNT,
+            'date' => $this->today(),
+            'amount' => $total,
+            'allocations' => [['invoiceId' => $invoice['id'], 'amount' => $total]],
+        ]]]);
+        $stale = ['orderId' => $order['id'], 'orderVersion' => $order['version'] + 5, 'date' => $this->today()];
+        $unknown = 999999999;
+
+        $requests = [
+            'deliveryCreate' => [self::DELIVERY_CREATE, ['in' => [$stale]]],
+            'deliveryDelete' => [self::DELIVERY_DELETE, ['ids' => [$invoice['deliveryIds'][0]]]],
+            'invoiceCreate' => [self::INVOICE_CREATE, ['in' => [$stale]]],
+            'invoiceDelete' => [self::INVOICE_DELETE, ['ids' => [$invoice['id']]]],
+            'customerPaymentCreate' => [self::PAYMENT_CREATE, ['in' => [[
+                'customerId' => $customer['id'],
+                'bankAccountId' => self::BANK_ACCOUNT,
+                'date' => $this->today(),
+                'amount' => 0,
+            ]]]],
+            'customerPaymentUpdate' => [self::PAYMENT_UPDATE, ['in' => [['id' => $unknown, 'allocations' => []]]]],
+            'customerPaymentDelete' => [self::PAYMENT_DELETE, ['ids' => [$unknown]]],
+        ];
+
+        $run = $this->whileTheDocumentLockIsHeld(array_values($requests), false);
+
+        foreach (array_keys($requests) as $index => $field) {
+            $response = $run['responses'][$index];
+            $this->assertSame('FA_REJECTED', $this->code($response), "$field: " . $response['raw']);
+            $this->assertSame(
+                'FrontAccounting is busy; try again.',
+                $response['body']['errors'][0]['message'] ?? null,
+                "$field: " . $response['raw']
+            );
+        }
+        // Busy answers are the proof per mutation; this, that they were waiting and not failing to connect.
+        $this->assertTrue($run['waited'], 'all seven must be seen waiting on the document lock at once');
+    }
+
+    /**
+     * Holds the document lock (DocumentLock::name() for company 0, pinned by
+     * DocumentLockTest) on this test's own connection, sends every request at once,
+     * and watches the server's connections until each request waits on the lock
+     * ("User lock" in the process list). With $release, it then lets them go (or
+     * after 5 seconds, when they are not all waiting); without, it holds on until
+     * every request has answered, so a request that skipped the lock answers with
+     * something other than busy. The lock is released whatever happens.
+     *
+     * @param array<int, array{0: string, 1: array<string, mixed>}> $requests query and variables
+     * @return array{
+     *     waited: bool,
+     *     responses: array<int, array{status: int, body: array<string, mixed>|null, raw: string}>
+     * }
+     */
+    private function whileTheDocumentLockIsHeld(array $requests, bool $release): array
+    {
+        $lock = $this->pdo()->quote('fa_graphql_docs_0');
+        $this->assertSame('1', (string) $this->pdo()->query("SELECT GET_LOCK($lock, 0)")->fetchColumn());
+        $waiting = $this->pdo()->prepare(
+            "SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE STATE = 'User lock' AND INFO LIKE ?"
+        );
+        $multi = curl_multi_init();
+        $handles = [];
+        $held = true;
+        $waited = false;
+        try {
+            foreach ($requests as [$query, $variables]) {
+                $handle = curl_init($this->url());
+                curl_setopt_array($handle, [
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => json_encode(['query' => $query, 'variables' => (object) $variables]),
+                    CURLOPT_HTTPHEADER => [
+                        'Content-Type: application/json',
+                        'User-Agent: fa-graphql-tests',
+                        'Authorization: Bearer ' . $this->token,
+                    ],
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT => 30,
+                ]);
+                curl_multi_add_handle($multi, $handle);
+                $handles[] = $handle;
+            }
+            // Long enough for every request to reach GET_LOCK; far short of its 10 s.
+            $deadline = microtime(true) + 5;
+            do {
+                curl_multi_exec($multi, $running);
+                if ($held && !$waited) {
+                    $waiting->execute(['%fa_graphql_docs_0%']);
+                    $waited = (int) $waiting->fetchColumn() >= count($requests);
+                    if ($release && ($waited || microtime(true) > $deadline)) {
+                        $this->pdo()->query("SELECT RELEASE_LOCK($lock)");
+                        $held = false;
+                    }
+                }
+                curl_multi_select($multi, 0.05);
+            } while ($running > 0);
+
+            $responses = [];
+            foreach ($handles as $handle) {
+                $raw = (string) curl_multi_getcontent($handle);
+                $decoded = json_decode($raw, true);
+                $responses[] = [
+                    'status' => (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE),
+                    'body' => is_array($decoded) ? $decoded : null,
+                    'raw' => $raw,
+                ];
+            }
+
+            return ['waited' => $waited, 'responses' => $responses];
+        } finally {
+            if ($held) {
+                $this->pdo()->query("SELECT RELEASE_LOCK($lock)");
+            }
+            foreach ($handles as $handle) {
+                curl_multi_remove_handle($multi, $handle);
+                curl_close($handle);
+            }
+            curl_multi_close($multi);
+        }
     }
 
     /** @return array<string, mixed> */

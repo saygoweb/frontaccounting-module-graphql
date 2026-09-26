@@ -18,6 +18,14 @@ class InvoiceMailer
     public const RESULT_PREFIX = 'FA_REPORT_RESULT ';
     private const NO_RESULT = 'The report process ended without a result.';
 
+    /**
+     * An empty result: FrontAccounting stopped before the report — session.inc refuses
+     * a login it cannot sign in (an unknown or inactive user, an unknown company, or
+     * graphql not active in the default company) without a message (final review M-1).
+     */
+    public const DID_NOT_RUN = 'The report process did not run: FrontAccounting refused the login for this company '
+        . 'and user (see the server log).';
+
     private ReportRunner $runner;
     private FaSession $session;
     private string $script;
@@ -118,6 +126,9 @@ class InvoiceMailer
                 $messages[] = "It was stopped after $timeoutSeconds seconds.";
             }
             return ['sent' => false, 'recipient' => null, 'messages' => $messages];
+        }
+        if ($payload['messages'] === []) {
+            return ['sent' => false, 'recipient' => null, 'messages' => [self::DID_NOT_RUN]];
         }
         $texts = [];
         $notified = false;

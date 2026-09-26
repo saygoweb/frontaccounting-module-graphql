@@ -7,6 +7,7 @@ use FA\GraphQL\Error\NotFound;
 use FA\GraphQL\Fa\Bootstrap;
 use FA\GraphQL\Fa\Service\CustomerService;
 use FA\GraphQL\Fa\Service\InvoiceMailer;
+use FA\GraphQL\Fa\Service\ReportRunner;
 use FA\GraphQL\Fa\Service\ServiceCall;
 use FA\GraphQL\Tests\Support\FaTestRows;
 use FA\GraphQL\Tests\Support\MailCatcher;
@@ -94,6 +95,29 @@ class InvoiceEmailTest extends InvoiceTestCase
         $this->assertFalse($results[0]['sent']);
         $this->assertNull($results[0]['recipient']);
         $this->assertStringContainsString('no email contact', implode("\n", $results[0]['messages']));
+        $this->assertCount(0, MailCatcher::newSince($this->mailBefore));
+    }
+
+    /**
+     * Final review M-1: a child FrontAccounting will not sign in — an unknown login,
+     * or a company that does not exist — prints an empty result; the invoice is not
+     * sent, and the messages say why.
+     */
+    public function testAChildThatCannotSignInSaysTheReportDidNotRun(): void
+    {
+        $invoiceId = $this->invoiceForANewCustomer('gqlt-refused@example.com');
+        $runner = $this->container->get(ReportRunner::class);
+        $script = dirname(__DIR__, 3) . '/bin/fa-report';
+
+        foreach ([[0, 'nosuchuser'], [7, 'apitest']] as [$company, $login]) {
+            $run = $runner->run(InvoiceMailer::argv($script, $company, $login, $invoiceId), 60);
+            $this->assertStringContainsString(InvoiceMailer::RESULT_PREFIX . '{"messages":[]}', $run->stdout);
+
+            $result = InvoiceMailer::interpret($run, 60);
+
+            $this->assertFalse($result['sent'], "company $company, login $login");
+            $this->assertSame([InvoiceMailer::DID_NOT_RUN], $result['messages'], "company $company, login $login");
+        }
         $this->assertCount(0, MailCatcher::newSince($this->mailBefore));
     }
 

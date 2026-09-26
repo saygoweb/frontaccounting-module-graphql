@@ -56,6 +56,11 @@ and Inputs; writes go through services in `src/Fa/Service`.
 - **Emailing** is a hand-written mutation, `invoiceEmail(id: [ID!]!)`, because it is
   an action with no generated shape (§6).
 
+*(revised)* As built (final review M-3): the generated `deliveryDelete`,
+`invoiceDelete` and `customerPaymentDelete` carry no description (introspection gives
+none, as for Release 2's `salesOrderDelete`); that delete voids is documented in the
+README and in the Type classes' docblocks instead of on the field.
+
 ### 2.1 Document numbers
 
 FrontAccounting numbers a document `MAX(trans_no)+1` per type without a lock, so
@@ -104,6 +109,11 @@ order's delivered quantities and stock.
 
 `DeliveryType` gets computed `lines` (`qtyInvoiced` from `qty_done`) and
 `orderId`.
+
+*(revised)* As built (final review M-3): `orderId` is a stored field (the
+`debtor_trans.order_` column), not computed; `lines` is computed as above; and a
+computed `voided` was added (whether `deliveryDelete` has voided the delivery; its row
+stays).
 
 ## 4. Invoices
 
@@ -286,6 +296,54 @@ PHP (web and CLI) points at a script that writes each message to
 `tmp/mail/<timestamp>-<n>.eml`; `docker/fa-graphql mail` lists them. Tests assert on
 those files. Production uses the server's own `sendmail_path`.
 
+*(revised)* As built (Release 3 Task 6, final review M-1 and M-2):
+
+- **The catcher** (`docker/fa-mail-catcher`) writes each message to
+  `/var/mail-catcher/<timestamp>-<pid>-<random>.eml` inside the app container, not
+  `tmp/mail/`; `docker/fa-graphql mail [list|show <f>|clear]` reads that directory.
+- **The child's arguments** are `bin/fa-report 107 <company> <login> <invoice-no>
+  email` — one invoice per child (the report's from and to are both that invoice),
+  started with `proc_open` and an argument array. The company is the request's
+  (`CompanyContext`), the login the verified token's user; nothing else the client
+  sends reaches the arguments except invoice numbers, which are parsed as integers
+  first. The child checks all five arguments and refuses anything else.
+- **The PHP binary** is chosen by `InvoiceMailer::phpBinary()`: under the CLI,
+  `PHP_BINARY`; under a web SAPI (mod_php's `PHP_BINARY` is empty or the web server
+  itself) the CLI beside this PHP — `PHP_BINDIR/php<major>.<minor>`, then
+  `PHP_BINDIR/php`, then `php` from `PATH`.
+- **The child includes `reporting/prn_redirect.php` itself** (after `chdir` to
+  `reporting/`), which resolves the report through `find_custom_file()`. The result
+  is the last stdout line starting with `FA_REPORT_RESULT `; everything else the child
+  prints is ignored.
+- **`sent`** is decided by message level, not by matching FrontAccounting's text:
+  true when the child reported at least one notice and no warning or error (and did
+  not time out). `recipient` is the last email address in a notice. No result line,
+  or an unreadable one, is `sent: false` with "The report process ended without a
+  result." (plus the timeout, when it was stopped). A result with no messages at all
+  — FrontAccounting stopped before the report, as `session.inc` does, silently, when
+  it refuses the login (an unknown or inactive user, an unknown company, or the
+  multi-company case below) — is `sent: false` with "The report process did not run:
+  FrontAccounting refused the login for this company and user (see the server
+  log)."
+- **Every id is validated before any email runs.** An id that is not an integer is
+  `BAD_INPUT`, an unknown invoice `NOT_FOUND`, a voided one `FA_REJECTED` — each for
+  the whole call, before any child starts, so no invoice of the list is emailed. The
+  call is refused (a `LogicException`) inside an open transaction.
+- **A log line per unsent invoice:** `InvoiceMailer` writes one `error_log` line —
+  `graphql: invoice <no> not emailed; child exit <code|timeout>; stdout …; stderr …`
+  (the last 2 KB of each) — for every invoice whose `sent` is false.
+- **PDFs are left when not sent.** FrontAccounting removes the report's PDF only after
+  mailing it. An unsent invoice's PDF stays in `company/N/pdf_files` under a random
+  24-character name until FrontAccounting's `End()` sweeps files older than 180 s on
+  a later report run (`reporting/includes/pdf_report.inc`); the web UI's own reports
+  leave theirs the same way. No cleanup of its own.
+- **Multi-company caveat.** Before signing in, `session.inc` installs the *default*
+  company's extension hooks. The child's password-less sign-in goes through
+  `hooks_graphql::authenticate`, so it works only when the graphql extension is
+  active in the default company as well as the target one; otherwise FrontAccounting
+  refuses the login and every invoice is `sent: false` with the "did not run" message
+  above. Installing the target company's hooks first is left for later.
+
 ## 7. `anorm-graphql` 0.3 (pre-approved: code, tag and push 0.3.x)
 
 ### 7.1 `--without-update <names>` and `--without-delete <names>`
@@ -325,6 +383,31 @@ around, under the same pre-approval.
   → `invoiceDelete` voids.
 - **Matrix:** {upstream, fork} × {PHP 7.4, 8.3}; `prepare_child` and `rep107` differ
   between upstream and the fork.
+
+*(revised)* As built (final review I-1 and M-4):
+
+- **The document lock over HTTP** (`tests/Http/BillingFlowTest`):
+  `testConcurrentPaymentsGetDistinctNumbers` holds the lock while two
+  `customerPaymentCreate` requests (two customers, sent together with `curl_multi`)
+  are both seen waiting on it in the process list, then releases it: both commit with
+  distinct numbers. `testEveryDocumentWriteWaitsForTheLockAndIsRefusedAsBusy` holds it
+  while all seven document writes (`deliveryCreate`/`Delete`, `invoiceCreate`/`Delete`,
+  `customerPaymentCreate`/`Update`/`Delete`) are sent at once: all seven are seen
+  waiting, and each answers `FA_REJECTED` "FrontAccounting is busy; try again." after
+  its 10 s. Each request is one FrontAccounting would refuse, so a resolver without the
+  lock writes nothing and fails the test by name. `DocumentLockTest` covers
+  `DocumentLock` itself.
+- **Checked in code, not by tests.** These ported checks are implemented, and
+  evidenced by reading the code, but no test exercises them yet (carried to Release 4,
+  final review M-12):
+  - the refusals of a prepaid order without a deferred income account and of an order
+    not released (prepayment not received) (`DeliveryService::create`);
+  - the delivery's default `dueDate` (the order's delivery date);
+  - cash or prepayment terms that come from the delivery (rather than from a given
+    `paymentTermsId`) refused on invoicing;
+  - a missing exchange rate refused at service level (only the `BillingChecks` helper
+    is tested, in `BillingPlumbingTest`);
+  - the company BCC on emailed invoices.
 
 ## 9. Rulings (decisions made autonomously)
 

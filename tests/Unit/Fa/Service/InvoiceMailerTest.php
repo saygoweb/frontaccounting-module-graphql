@@ -95,6 +95,17 @@ class InvoiceMailerTest extends TestCase
         $this->assertSame(['The report process ended without a result.'], $r['messages']);
     }
 
+    public function testAResultWithNoMessagesSaysTheReportDidNotRun(): void
+    {
+        // Final review M-1: session.inc refuses a login (an unknown user or company, an
+        // inactive user, graphql not active in the default company) without a message.
+        $r = InvoiceMailer::interpret($this->run1($this->line([])), 60);
+        $this->assertFalse($r['sent']);
+        $this->assertNull($r['recipient']);
+        $this->assertSame([InvoiceMailer::DID_NOT_RUN], $r['messages']);
+        $this->assertStringContainsString('refused the login', InvoiceMailer::DID_NOT_RUN);
+    }
+
     public function testTheArgvIsAnArrayWithTheCompanyLoginAndInvoice(): void
     {
         $this->assertSame(
