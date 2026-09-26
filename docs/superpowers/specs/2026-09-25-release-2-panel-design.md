@@ -293,7 +293,14 @@ update and delete need `SA_SALESORDER`.
   its Type and `--input-only` (§6.2) for its `SalesOrderLineCreateInput` /
   `SalesOrderLineUpdateInput`. `SalesOrderType` gets a computed `lines` field
   (`qtyDelivered` from `qty_sent`, `qtyInvoiced` from `invoiced`); the order
-  Inputs get `lines`.
+  Inputs get `lines`. *(revised)* An order's location field is `locationId`, like
+  every other reference (§4.3 records this for branches, not for orders; Checkpoint
+  C review M-3 item 6).
+  *(revised)* FrontAccounting 2.4's `add_sales_order()` never writes
+  `sales_orders.contact_email`, so `email` is dropped from `SalesOrderCreateInput`
+  and `SalesOrderUpdateInput` (`SERVER_SET`): a field this API never writes would
+  mislead a client who set it (Checkpoint C review M-3 item 1). Only `phone`
+  travels.
 - **`salesOrderCreate`**: `new Cart(ST_SALESORDER, 0)`, the document date set
   explicitly from `orderDate` (never `new_doc_date()`), then
   `get_customer_details_to_order`, then the input's overrides (price list, payment
@@ -306,6 +313,12 @@ update and delete need `SA_SALESORDER`.
   discount 0–100, price `>= 0` for stock items; the item exists. A line's price
   defaults to `get_kit_price()` for the price list; a kit expands into its
   components as `add_to_order` does (ported: the original reads `$_POST`).
+  *(revised)* On cash-sale terms FrontAccounting ignores the delivery details
+  entirely — `deliveryDate`, `customerRef`, `deliverTo`, `deliveryAddress`,
+  `phone`, `shipperId` and `prepaymentAmount` — not only the `deliveryDate >=
+  orderDate` check named above, and so does the API: `copy_to_cart()` takes the
+  point of sale's location instead and skips every one of these fields (Checkpoint
+  C review M-3 item 2).
 - **`salesOrderUpdate`**: `version` is required (the once-only
   `SalesOrderUpdateInput` makes it non-null); the service locks the order row
   (`SELECT ... FOR UPDATE`) and refuses a mismatch with `FaRejected` ("the order
@@ -318,6 +331,14 @@ update and delete need `SA_SALESORDER`.
   price list, order date, payment terms or prepayment. For a **recurring order**
   (one with a schedule) the header stays editable and the quantity floor does not
   apply, as `sgw_sales` does: each generated invoice raises `qtyDelivered`.
+  *(revised)* `sales_orders.version` is `tinyint unsigned`: FrontAccounting
+  connects with `sql_mode = STRICT_ALL_TABLES`, so the column holds at most 255
+  changes to one order, deliveries included. The service refuses the 255th-and-
+  beyond write with `FA_REJECTED` ("this order has reached FrontAccounting's edit
+  limit of 255 versions; create a new order") before attempting it, in place of
+  the `INTERNAL` "out of range" error FrontAccounting's own strict mode would
+  otherwise raise, which would also leave the order permanently unable to be
+  edited again (Checkpoint C review M-1).
 - **`salesOrderDelete`**: FrontAccounting's cancel, documented on the field. An
   order with no deliveries is deleted (`delete_sales_order`), its schedule deleted
   in the same transaction; an order with deliveries is closed (`close_sales_order`:
@@ -338,8 +359,16 @@ When `FaSession::isActive('sgw_sales')`:
   `monthDay: String` (`MM-DD`, yearly), `auto: Boolean = true` — mapped onto
   `sales_recurring` (`dt_start`, `dt_end`, `repeats`, `every`, `occur`, `auto`).
   On update, `recurring` given sets or changes the schedule; to end one, set `end`.
+  *(revised)* `every` is `>= 1` **and `<= 127`**: `sales_recurring.every` is
+  `tinyint(4)`, so 128 and above is `BAD_INPUT`, not FrontAccounting's own error
+  (Checkpoint C review M-3 item 5).
 - `SalesOrderType` gets `recurring: Recurrence` (`start`, `end`, `next`, `repeats`,
-  `every`, `day`, `monthDay`, `auto`), null when there is none.
+  `every`, `day`, `monthDay`, `auto`), null when there is none. *(revised)* `next`
+  is never set from an input: it is `sgw_sales`' own state (`dt_next`, when the
+  next invoice is due), computed by `sgw_sales` itself and read back unchanged
+  here. It is kept across an update unless the rhythm changes — `start`, `repeats`,
+  `every` or `day`/`monthDay` — matching `sgw_sales`' own page, which recomputes
+  `next` only then (Checkpoint C review M-3 item 4).
 - `RecurringSchedule` writes the row with `db_query` inside the order's
   `FaTransaction`, so order and schedule commit or roll back together. It is not
   `sgw_sales`' `SalesRecurringModel`, which writes on its own PDO connection outside
@@ -347,7 +376,17 @@ When `FaSession::isActive('sgw_sales')`:
 
 When `sgw_sales` is not active, `recurring` in an input is `BadInput` ("recurring
 orders need the sgw_sales extension"), and `recurring` reads null. The schema is the
-same either way.
+same either way. *(revised)* The two relaxations `salesOrderUpdate` grants a
+recurring order (§4.4: the header stays editable, and the quantity floor does not
+apply) follow `isRecurringOrder()`, which in turn follows `read()`: with `sgw_sales`
+inactive, an order that still has a `sales_recurring` row loses both relaxations,
+the same as one with no schedule at all, because `read()` returns null and
+`recurring` on the Type reads null too. Nothing is corrupted — `delete()`/`end()`
+still act on the row whenever the table has its 1.4 shape — but a long-running
+recurring order whose invoicing quantities were raised by `sgw_sales` can no longer
+have a line re-sent at its original quantity while the extension is off; the client
+has to omit `lines` (Checkpoint C review M-3 item 7, and the judgement in the
+Checkpoint C review).
 
 ## 5. Errors
 

@@ -26,6 +26,9 @@ class SalesOrderService
     public const DELETED = 'DELETED';
     public const CLOSED = 'CLOSED';
     public const STALE = 'The order was changed by someone else; read it again.';
+    public const VERSION_LIMIT = 255;
+    public const EDIT_LIMIT = "This order has reached FrontAccounting's edit limit of 255 versions; "
+        . 'create a new order.';
     private const FROZEN = 'Something on this order has been delivered or invoiced: its customer, branch, price list, '
         . 'date, payment terms and prepayment can no longer change.';
 
@@ -619,10 +622,20 @@ class SalesOrderService
      * holds until it commits, so nobody writes between this check and ours.
      * FrontAccounting's own check (update_sales_order()'s WHERE version = …) ignores a
      * zero-row update and rewrites the lines anyway.
+     *
+     * sales_orders.version is tinyint unsigned: FrontAccounting connects with
+     * sql_mode = STRICT_ALL_TABLES, so a write that would take version past 255 fails
+     * in FrontAccounting itself with an INTERNAL "out of range" error, and the order
+     * can never be edited again (Checkpoint C review M-1). Refused here, before any
+     * write, as FA_REJECTED instead.
      */
     private function lockVersion(int $id, int $version): void
     {
-        if ($this->lockOrder($id) !== $version) {
+        $current = $this->lockOrder($id);
+        if ($current >= self::VERSION_LIMIT) {
+            throw new FaRejected(self::EDIT_LIMIT, [self::EDIT_LIMIT]);
+        }
+        if ($current !== $version) {
             throw new FaRejected(self::STALE, [self::STALE]);
         }
     }
@@ -745,7 +758,7 @@ class SalesOrderService
                 $added[$index] = $given;
                 continue;
             }
-            $id = (int) $given['id'];
+            $id = IntKey::parse($given['id'], "$field.id");
             if (!isset($existing[$id])) {
                 throw new BadInput("Line $id is not a line of this order.", "$field.id");
             }
