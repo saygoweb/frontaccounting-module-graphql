@@ -91,7 +91,9 @@ contact linked to the customer and that branch. Percentages are 0–100.
 ### Sales orders
 
 `salesOrderCreate`, `salesOrderUpdate`, `salesOrderDelete`, `salesOrderList`
-(**Sales orders edition** to write, **Sales transactions view** to read). An
+(**Sales orders edition** to write, **Sales transactions view** to read), and
+`salesOrderLineList`, a read-only list of order lines (**Sales transactions
+view**); lines are written through their order. An
 order takes its customer's and branch's defaults (price list, payment terms,
 delivery address, location, shipper) unless you give them. A line's price
 defaults to the price list's. Dates are `YYYY-MM-DD`.
@@ -101,7 +103,12 @@ defaults to the price list's. Dates are `YYYY-MM-DD`.
   given, replaces the order's lines. A line with an `id` is updated, one without
   is added, and one left out is removed. A delivered line can't be removed or
   reduced below what was delivered. Once anything is delivered or invoiced, the
-  customer, branch, price list, date and payment terms are fixed.
+  customer, branch, price list, date, payment terms and prepayment are fixed.
+- **Order ids come round again.** FrontAccounting gives a new order the number
+  after the highest one, so when the newest order is deleted its id goes to the
+  next order, which starts again at version 0. A client that keeps an order's id
+  should check the order's `customerId` when it reads it back or before it
+  updates it.
 - **`salesOrderDelete` is FrontAccounting's *cancel order*.** An order with no
   deliveries is deleted. One with deliveries is closed instead: its quantities
   are cut to what was delivered, and it stays readable.
@@ -120,7 +127,10 @@ recurring: { start: "2026-10-01", repeats: MONTH, every: 1, day: 1 }
 To end a schedule, update the order with `recurring: { …, end: "2027-09-30" }`.
 The schedule is written in the same transaction as its order: deleting the order
 deletes it, and closing the order ends it. Without `sgw_sales`, `recurring` is
-refused (`BAD_INPUT`) and always reads `null`. Generating the recurring invoices
+refused (`BAD_INPUT`) and always reads `null`. A recurring order keeps its
+header editable once invoices have been generated from it, and its quantities
+may drop below what was delivered, as `sgw_sales`' own page allows: each
+generated invoice raises the delivered quantity. Generating the recurring invoices
 comes in a later release.
 
 ### The panel's flow
@@ -150,6 +160,9 @@ $customer = $body['data']['customerCreate'][0];
 );
 $order = $body['data']['salesOrderCreate'][0];   // keep $order['version'] for updates
 ```
+
+`HOSTING-M` is illustrative: use a stock id from your own items (the demo
+company has none by that name).
 
 ## Generating Types
 

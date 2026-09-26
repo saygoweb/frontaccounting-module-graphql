@@ -6,13 +6,16 @@ use FA\GraphQL\Type\SalesOrder\SalesOrderCreateInput;
 use FA\GraphQL\Type\SalesOrder\SalesOrderType;
 use FA\GraphQL\Type\SalesOrder\SalesOrderUpdateInput;
 use FA\GraphQL\Type\SalesOrderLine\SalesOrderLineCreateInput;
+use FA\GraphQL\Tests\Support\FaOrderRows;
+use FA\GraphQL\Tests\Support\FaTestRows;
 
 /**
  * Yours to edit: anorm-graphql wrote this file once and never again.
  * The structural tests are inherited from Anorm\GraphQL\Testing\ModelTypeTestCase.
  * The lifecycle is this file's own: an order is written through FrontAccounting's
  * Cart on its own mysqli connection, which the inherited PDO rollback cannot reach,
- * so what it creates is purged in tearDown. The Inputs differ from the Type by the
+ * so what it creates is purged in tearDown — only what it created (FaOrderRows:
+ * FrontAccounting reuses a deleted order's number). The Inputs differ from the Type by the
  * fields FrontAccounting sets itself (SERVER_SET) and the nested lines.
  *
  * @runTestsInSeparateProcesses
@@ -86,22 +89,21 @@ class SalesOrderTypeTest extends TestCase
     /** @var int[] */
     private array $made = [];
 
+    private ?FaOrderRows $orderRows = null;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->orderRows = FaOrderRows::mark(FaTestRows::connect());
+    }
+
     protected function tearDown(): void
     {
         // First: it rolls back the PDO transaction a read-only inherited test opened.
         parent::tearDown();
-        $pdo = $this->container->get(\PDO::class);
         foreach ($this->made as $orderNo) {
-            self::purgeSchedule($this->container, $orderNo);
-            foreach (
-                [
-                'DELETE FROM 0_sales_order_details WHERE trans_type = 30 AND order_no = ?',
-                'DELETE FROM 0_sales_orders WHERE trans_type = 30 AND order_no = ?',
-                'DELETE FROM 0_audit_trail WHERE type = 30 AND trans_no = ?',
-                'DELETE FROM 0_refs WHERE type = 30 AND id = ?',
-                ] as $sql
-            ) {
-                $pdo->prepare($sql)->execute([$orderNo]);
+            if ($this->orderRows !== null) {
+                $this->orderRows->purge($orderNo);
             }
         }
         $this->made = [];
@@ -199,19 +201,6 @@ class SalesOrderTypeTest extends TestCase
             ],
             $created[0]['recurring']
         );
-        self::purgeSchedule($this->container, (int) $created[0]['id']);
-    }
-
-    /**
-     * @param mixed $container
-     */
-    public static function purgeSchedule($container, int $orderNo): void
-    {
-        $pdo = $container->get(\PDO::class);
-        // As SalesOrderTestCase::purgeOrder(): a stack without sgw_sales has no table.
-        if ($pdo->query("SHOW TABLES LIKE '0_sales_recurring'")->fetch() !== false) {
-            $pdo->prepare('DELETE FROM 0_sales_recurring WHERE trans_no = ?')->execute([$orderNo]);
-        }
     }
 
     /**

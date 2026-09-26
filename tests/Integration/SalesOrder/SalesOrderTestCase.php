@@ -14,12 +14,16 @@ use FA\GraphQL\Fa\Warnings;
 use FA\GraphQL\RequestInfo;
 use FA\GraphQL\SessionGate;
 use FA\GraphQL\Tests\Integration\FaTestCase;
+use FA\GraphQL\Tests\Support\FaOrderRows;
+use FA\GraphQL\Tests\Support\FaTestRows;
 
 /**
  * Sales-order tests against FrontAccounting in-process, signed in as apitest the way
  * a bearer token would be. What they write, FrontAccounting commits on its own mysqli
  * connection: nothing rolls it back, so every order a test makes is tracked and
- * purged — with its deliveries — in tearDown.
+ * purged — with its deliveries — in tearDown, against the mark setUp took
+ * (FaOrderRows: FrontAccounting reuses a deleted order's number, and an earlier
+ * run's rows for that number must survive).
  *
  * Every subclass must carry
  *
@@ -32,6 +36,8 @@ abstract class SalesOrderTestCase extends FaTestCase
 
     /** @var int[] */
     private array $orders = [];
+
+    private ?FaOrderRows $orderRows = null;
 
     protected function setUp(): void
     {
@@ -51,6 +57,8 @@ abstract class SalesOrderTestCase extends FaTestCase
         FaIncludes::orders();
         FaMessages::reset();
         Warnings::reset();
+
+        $this->orderRows = FaOrderRows::mark(FaTestRows::connect());
     }
 
     protected function tearDown(): void
@@ -121,7 +129,7 @@ abstract class SalesOrderTestCase extends FaTestCase
         $statement->execute([$orderNo]);
         $row = $statement->fetch(\PDO::FETCH_ASSOC);
 
-        return $row === false ? null : $row;
+        return $row === false ? null : self::asStrings($row);
     }
 
     /**
@@ -134,7 +142,23 @@ abstract class SalesOrderTestCase extends FaTestCase
         );
         $statement->execute([$orderNo]);
 
-        return $statement->fetchAll(\PDO::FETCH_ASSOC);
+        return array_map([self::class, 'asStrings'], $statement->fetchAll(\PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * A row as PHP 7.4's PDO returns it: every non-null column a string. From PHP 8.1,
+     * pdo_mysql returns integer and float columns as PHP ints and floats, so a test
+     * that compares a column with assertSame would pass on one PHP and fail on the
+     * other.
+     *
+     * @param array<string, mixed> $row
+     * @return array<string, string|null>
+     */
+    private static function asStrings(array $row): array
+    {
+        return array_map(static function ($value): ?string {
+            return $value === null ? null : (string) $value;
+        }, $row);
     }
 
     /**
@@ -172,45 +196,13 @@ abstract class SalesOrderTestCase extends FaTestCase
     }
 
     /**
-     * Remove an order and everything FrontAccounting wrote for it and its deliveries.
-     * The tables are those add_sales_order(), write_sales_delivery() and sgw_sales
-     * write (sales/includes/db/sales_order_db.inc, sales_delivery_db.inc).
+     * Remove an order and everything this test wrote for it and its deliveries, and
+     * nothing an earlier test or run wrote (FaOrderRows).
      */
     protected function purgeOrder(int $orderNo): void
     {
-        $pdo = $this->pdo();
-        $deliveries = $pdo->prepare('SELECT trans_no FROM 0_debtor_trans WHERE type = 13 AND order_ = ?');
-        $deliveries->execute([$orderNo]);
-        foreach ($deliveries->fetchAll(\PDO::FETCH_COLUMN) as $dn) {
-            foreach (
-                [
-                'DELETE FROM 0_debtor_trans_details WHERE debtor_trans_type = 13 AND debtor_trans_no = ?',
-                'DELETE FROM 0_stock_moves WHERE type = 13 AND trans_no = ?',
-                'DELETE FROM 0_gl_trans WHERE type = 13 AND type_no = ?',
-                'DELETE FROM 0_trans_tax_details WHERE trans_type = 13 AND trans_no = ?',
-                'DELETE FROM 0_audit_trail WHERE type = 13 AND trans_no = ?',
-                'DELETE FROM 0_refs WHERE type = 13 AND id = ?',
-                'DELETE FROM 0_comments WHERE type = 13 AND id = ?',
-                'DELETE FROM 0_debtor_trans WHERE type = 13 AND trans_no = ?',
-                ] as $sql
-            ) {
-                $pdo->prepare($sql)->execute([$dn]);
-            }
-        }
-        foreach (
-            [
-            'DELETE FROM 0_sales_order_details WHERE trans_type = 30 AND order_no = ?',
-            'DELETE FROM 0_sales_orders WHERE trans_type = 30 AND order_no = ?',
-            'DELETE FROM 0_audit_trail WHERE type = 30 AND trans_no = ?',
-            'DELETE FROM 0_refs WHERE type = 30 AND id = ?',
-            'DELETE FROM 0_comments WHERE type = 30 AND id = ?',
-            'DELETE FROM 0_cust_allocations WHERE trans_type_to = 30 AND trans_no_to = ?',
-            ] as $sql
-        ) {
-            $pdo->prepare($sql)->execute([$orderNo]);
-        }
-        if ($pdo->query("SHOW TABLES LIKE '0_sales_recurring'")->fetch() !== false) {
-            $pdo->prepare('DELETE FROM 0_sales_recurring WHERE trans_no = ?')->execute([$orderNo]);
+        if ($this->orderRows !== null) {
+            $this->orderRows->purge($orderNo);
         }
     }
 }

@@ -72,7 +72,7 @@ services.**
 |---|---|
 | `CustomerService` | `add_customer`, `update_customer`, `update_record_status`, `delete_customer`; on create, `add_branch`, `add_crm_person`, `add_crm_contact` per `auto_create_branch` |
 | `BranchService` | `add_branch`, `update_branch`, `update_record_status`, `delete_branch`; `add_crm_person` / `add_crm_contact` for the branch contact |
-| `ContactService` | `add_crm_person`, `update_crm_person`, `add_crm_contact`, `delete_crm_contacts`, `delete_crm_person` |
+| `ContactService` | `add_crm_person`, `update_crm_person`, `update_record_status` *(revised)*, `add_crm_contact`, `delete_crm_contacts`, `delete_crm_person` |
 | `SalesOrderService` | `Cart`, `get_customer_details_to_order`, `add_to_cart`, `Cart::write`, `delete_sales_order`, `close_sales_order`, `get_kit_price` |
 | `RecurringSchedule` | `db_query` on `sales_recurring`, inside the order's transaction |
 
@@ -106,6 +106,12 @@ error (Checkpoint B review M-1). `rowsById()` is authorised by the write's own v
 — create, edit or delete — never the list area: a write's read-back of its own rows
 is authorised by the write's area (the ledger's ruling; review M-3), so a role that
 may write sales orders but not list them is not refused after its order committed.
+
+*(revised)* `ContactService` also calls `update_record_status` (for `inactive`, as
+the customer and branch services do), and when a contact update replaces its links
+it calls `update_crm_person` with a `$type` that matches no link (`KEEP_LINKS`), so
+FrontAccounting's `update_person_contacts()` leaves the links alone and the service
+replaces only the customer and branch links itself (Checkpoint D review M-4 item 1).
 
 ### 2.2 Writes fail closed
 
@@ -163,6 +169,10 @@ installed for the current company (`isset($Hooks[$package])` after
 `install_hooks()`). `RecurringSchedule` also requires the `sales_recurring` table to
 have its 1.4 shape (`id`, unique `trans_no`); a missing table or column is
 `FaRejected` with a message naming the missing upgrade (`update_1.4.sql`).
+*(revised)* Tested without DDL (which would commit): the shape check reads
+`information_schema` under the company's table prefix, and
+`SalesOrderRecurrenceTest` points the company at a prefix with no
+`sales_recurring` (Checkpoint D review M-2 item 3).
 
 ## 4. Schema
 
@@ -333,12 +343,19 @@ update and delete need `SA_SALESORDER`.
   apply, as `sgw_sales` does: each generated invoice raises `qtyDelivered`.
   *(revised)* `sales_orders.version` is `tinyint unsigned`: FrontAccounting
   connects with `sql_mode = STRICT_ALL_TABLES`, so the column holds at most 255
-  changes to one order, deliveries included. The service refuses the 255th-and-
-  beyond write with `FA_REJECTED` ("this order has reached FrontAccounting's edit
+  changes to one order, deliveries included. *(revised)* The service refuses a
+  write once the stored version is already 255 — the 256th write, the first that
+  could not be stored — with `FA_REJECTED` ("this order has reached FrontAccounting's edit
   limit of 255 versions; create a new order") before attempting it, in place of
   the `INTERNAL` "out of range" error FrontAccounting's own strict mode would
   otherwise raise, which would also leave the order permanently unable to be
   edited again (Checkpoint C review M-1).
+  *(revised)* Two more of the page's guards apply to both update and delete,
+  before anything is written (`sales_order_entry.php` :104-112 and
+  `check_is_editable()`, `includes/data_checks.inc` :646-659): an open prepaid
+  order (invoices or payments against prepayment terms) is `FA_REJECTED`; and an
+  order another user created, when the caller lacks `SA_EDITOTHERSTRANS`, is
+  `FORBIDDEN` (Checkpoint D review M-4 item 2).
 - **`salesOrderDelete`**: FrontAccounting's cancel, documented on the field. An
   order with no deliveries is deleted (`delete_sales_order`), its schedule deleted
   in the same transaction; an order with deliveries is closed (`close_sales_order`:
@@ -349,6 +366,11 @@ update and delete need `SA_SALESORDER`.
   is locked (`SELECT … FOR UPDATE`) inside the transaction, so the deliveries check
   and the delete or close are one step. An order that is closed rather than deleted
   is reported in `extensions.warnings`.
+- *(revised)* **`salesOrderLineList(query: MangoInput): [SalesOrderLineType!]!`**
+  exists: the generated read-only `SalesOrderLine` Type's list, read with
+  `SA_SALESTRANSVIEW` and scoped to `trans_type = 30`, like the orders it belongs
+  to. It has no mutations; lines are written through their order (Checkpoint D
+  review M-4 item 4).
 
 ### 4.5 Recurrence
 
@@ -395,7 +417,7 @@ Checkpoint C review).
 | `BAD_INPUT` | A field fails this module's validation; `extensions.field` names it, and `extensions.index` the batch item |
 | `NOT_FOUND` | An update or delete names a row that does not exist (in the order's scope, for orders; in the Contact scope, §4.3, for contacts); `extensions.index` the batch item *(revised)* |
 | `FA_REJECTED` | FrontAccounting refused (its messages in `extensions.messages`), a stale order version, a guard (customer with orders), `sgw_sales`' table not upgraded; `extensions.index` the batch item. *(revised)* A guard of this module's own carries its message in `extensions.messages` too, so a client reads `messages` the same way for every refusal (Checkpoint B review M-4) |
-| `FORBIDDEN` | `Guard` refused; or a write reached a Type with no declared write path (§2.2) |
+| `FORBIDDEN` | `Guard` refused; or a write reached a Type with no declared write path (§2.2); or *(revised)* a sales-order update or delete names an order another user created and the caller lacks `SA_EDITOTHERSTRANS` (§4.4) |
 
 `extensions.warnings` (top level) carries FrontAccounting's warnings when the
 mutation succeeded.

@@ -66,12 +66,13 @@ After the dataset, `db load` also applies each active extension's
 `sql/update_*.sql` (this module's, and `sgw_sales`'s `update_1.0.sql` +
 `update_1.4.sql` when `SGW_SALES_ACTIVE=true`, cut at their `# Upgrade helpers`
 line), then `tests/data/seed.sql`. That seed adds a `GraphQL API` role holding
-`SA_GRAPHQL` plus the sales areas (including `SA_SALESTYPES`, for the `SalesType`
-pilot), a user in it, and a user without `SA_GRAPHQL`:
+`SA_GRAPHQL` (role 2's areas, plus `SA_SALESORDER` and `SA_CUSTOMER` — section
+3072, areas 3075 and 3074 — appended when missing), a user in it, a user without
+`SA_GRAPHQL`, and a role that may only take orders:
 
 | user | password | role |
 | --- | --- | --- |
-| `apitest` | `password` | `GraphQL API` (`SA_GRAPHQL`, `SA_SALESTYPES`) |
+| `apitest` | `password` | `GraphQL API` (System Administrator's areas, `SA_GRAPHQL`, `SA_SALESORDER`, `SA_CUSTOMER`) |
 | `noapi` | `password` | System Administrator (no `SA_GRAPHQL`) |
 | `apiorders` | `password` | `GraphQL Orders` (`SA_GRAPHQL`, `SA_SALESTRANSVIEW`, `SA_SALESORDER` only) |
 

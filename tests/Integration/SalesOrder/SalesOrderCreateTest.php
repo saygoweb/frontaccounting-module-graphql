@@ -408,4 +408,65 @@ class SalesOrderCreateTest extends SalesOrderTestCase
         $this->assertSame([2.0, 0.0], [(float) $lines[0]['qtyDelivered'], (float) $lines[1]['qtyDelivered']]);
         $this->assertSame([(string) $first, (string) $second], array_map('strval', array_column($lines, 'id')));
     }
+
+    /**
+     * get_customer_details_to_order() (sales_order_ui.inc :81-82): a customer whose
+     * credit status disallows invoices is on hold, and the page offers no Place Order
+     * button. The demo's credit statuses 3 and 4 disallow invoices; customer 1 is put
+     * on 3 for the test and given its own status back, pass or fail.
+     */
+    public function testAnOnHoldCustomerIsRefused(): void
+    {
+        $pdo = $this->pdo();
+        $status = (string) $pdo->query('SELECT credit_status FROM 0_debtors_master WHERE debtor_no = 1')->fetchColumn();
+        $this->assertSame('1', (string) $pdo->query(
+            'SELECT dissallow_invoices FROM 0_credit_status WHERE id = 3'
+        )->fetchColumn(), 'the demo\'s credit status 3 disallows invoices');
+        $pdo->exec('UPDATE 0_debtors_master SET credit_status = 3 WHERE debtor_no = 1');
+        try {
+            $this->track($this->createOrderOrFail([]));
+            $this->fail('an on-hold customer\'s order was accepted');
+        } catch (FaRejected $e) {
+            $message = 'The selected customer account is currently on hold. '
+                . 'Please contact the credit control personnel to discuss.';
+            $this->assertSame($message, $e->getMessage());
+            $this->assertSame([$message], $e->getExtensions()['messages'] ?? null);
+        } finally {
+            $pdo->prepare('UPDATE 0_debtors_master SET credit_status = ? WHERE debtor_no = 1')->execute([$status]);
+        }
+        $this->assertSame(
+            $status,
+            (string) $pdo->query('SELECT credit_status FROM 0_debtors_master WHERE debtor_no = 1')->fetchColumn()
+        );
+    }
+
+    /**
+     * can_process() (sales_order_entry.php :446-451): cash terms need a cash account
+     * for the point of sale. The demo's only cash account (bank account 2, type 3) is
+     * made a current account for the test and given its type back, pass or fail.
+     */
+    public function testCashTermsWithoutACashAccountAreRefused(): void
+    {
+        $pdo = $this->pdo();
+        $cash = $pdo->query('SELECT id FROM 0_bank_accounts WHERE account_type = 3')->fetchAll(\PDO::FETCH_COLUMN);
+        $this->assertNotEmpty($cash, 'the demo has a cash account');
+        $ids = implode(', ', array_map('intval', $cash));
+        $pdo->exec("UPDATE 0_bank_accounts SET account_type = 0 WHERE id IN ($ids)");
+        try {
+            $this->track($this->createOrderOrFail(['paymentTermsId' => 4]));
+            $this->fail('a cash order with no cash account was accepted');
+        } catch (FaRejected $e) {
+            $message = 'You need to define a cash account for your Sales Point.';
+            $this->assertSame($message, $e->getMessage());
+            $this->assertSame([$message], $e->getExtensions()['messages'] ?? null);
+        } finally {
+            $pdo->exec("UPDATE 0_bank_accounts SET account_type = 3 WHERE id IN ($ids)");
+        }
+        $this->assertSame(
+            count($cash),
+            (int) $pdo->query(
+                "SELECT COUNT(*) FROM 0_bank_accounts WHERE account_type = 3 AND id IN ($ids)"
+            )->fetchColumn()
+        );
+    }
 }

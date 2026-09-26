@@ -2,6 +2,8 @@
 
 namespace FA\GraphQL\Tests\Http;
 
+use FA\GraphQL\Tests\Support\FaOrderRows;
+use FA\GraphQL\Tests\Support\FaTestRows;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -9,8 +11,10 @@ use PHPUnit\Framework\TestCase;
  * branch and contact, an order with lines and a recurrence, read back, updated with
  * its version, a stale update refused, then deleted — or closed, once delivered.
  *
- * Rows it creates stay in the database; every run uses fresh references, and
- * `docker/fa-graphql db load` clears them.
+ * tearDown removes everything a test wrote, pass or fail: its customers (by the
+ * test's reference prefix) with their branches, persons and links; its orders with
+ * their lines and schedules; and the audit_trail, refs and refresh-token rows it
+ * caused — and nothing an earlier run left for a reused order number (FaOrderRows).
  */
 class PanelFlowTest extends TestCase
 {
@@ -34,9 +38,78 @@ class PanelFlowTest extends TestCase
 
     private string $token;
 
+    /** Every customer this test creates has a reference starting with it. */
+    private string $prefix;
+
+    /** @var int[] every order this test created, deleted or not */
+    private array $orders = [];
+
+    /** The refresh-token table's highest id at the start. */
+    private int $tokenMark = 0;
+
+    private ?FaOrderRows $orderRows = null;
+
+    private ?\PDO $pdo = null;
+
     protected function setUp(): void
     {
+        if (getenv('SGW_SALES_ACTIVE') === 'false' || !$this->hasRecurringTable()) {
+            $this->markTestSkipped('The panel flow needs sgw_sales active (recurring orders).');
+        }
+        $this->prefix = 'PANEL-' . bin2hex(random_bytes(4));
+        $this->orderRows = FaOrderRows::mark($this->pdo(), $this->table(''));
+        $this->tokenMark = (int) $this->pdo()->query(
+            'SELECT COALESCE(MAX(id), 0) FROM ' . $this->table('graphql_refresh_token')
+        )->fetchColumn();
         $this->token = $this->login()['accessToken'];
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->orderRows === null) {
+            return;
+        }
+        $pdo = $this->pdo();
+        $customers = $this->column(
+            'SELECT debtor_no FROM ' . $this->table('debtors_master') . ' WHERE debtor_ref LIKE ?',
+            [$this->prefix . '%']
+        );
+        $orders = $this->orders;
+        if ($customers !== []) {
+            $orders = array_merge($orders, $this->column(
+                'SELECT order_no FROM ' . $this->table('sales_orders') . ' WHERE trans_type = 30 AND debtor_no IN ('
+                    . implode(', ', array_fill(0, count($customers), '?')) . ')',
+                $customers
+            ));
+        }
+        foreach (array_unique($orders) as $orderNo) {
+            $this->orderRows->purge($orderNo);
+        }
+        FaTestRows::sweep($pdo, $this->prefix, $this->table(''));
+        $pdo->prepare('DELETE FROM ' . $this->table('graphql_refresh_token') . ' WHERE id > ?')
+            ->execute([$this->tokenMark]);
+        $this->orders = [];
+        $this->orderRows = null;
+    }
+
+    private function hasRecurringTable(): bool
+    {
+        $found = $this->pdo()->prepare('SHOW TABLES LIKE ?');
+        $found->execute([$this->table('sales_recurring')]);
+
+        return $found->fetch() !== false;
+    }
+
+    /**
+     * @param array<int, mixed> $params
+     * @return int[]
+     */
+    private function column(string $sql, array $params = []): array
+    {
+        $statement = $this->pdo()->prepare($sql);
+        $statement->execute($params);
+
+        return array_map('intval', $statement->fetchAll(\PDO::FETCH_COLUMN));
     }
 
     private function code(array $response): ?string
@@ -58,14 +131,16 @@ class PanelFlowTest extends TestCase
 
     private function pdo(): \PDO
     {
-        $pdo = new \PDO(
-            'mysql:host=' . getenv('FA_DB_HOST') . ';dbname=' . getenv('FA_DB_NAME'),
-            (string) getenv('FA_DB_USER'),
-            (string) getenv('FA_DB_PASSWORD')
-        );
-        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        if ($this->pdo === null) {
+            $this->pdo = new \PDO(
+                'mysql:host=' . getenv('FA_DB_HOST') . ';dbname=' . getenv('FA_DB_NAME'),
+                (string) getenv('FA_DB_USER'),
+                (string) getenv('FA_DB_PASSWORD')
+            );
+            $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        }
 
-        return $pdo;
+        return $this->pdo;
     }
 
     private function table(string $name): string
@@ -73,9 +148,12 @@ class PanelFlowTest extends TestCase
         return getenv('FA_DB_PREFIX') . $name;
     }
 
+    /**
+     * Today as FrontAccounting's Today() sees it: PHP's default timezone, not UTC.
+     */
     private function today(): string
     {
-        return gmdate('Y-m-d');
+        return date('Y-m-d');
     }
 
     /**
@@ -83,7 +161,7 @@ class PanelFlowTest extends TestCase
      */
     private function createCustomer(): array
     {
-        $ref = 'PANEL-' . bin2hex(random_bytes(4));
+        $ref = $this->prefix . '-' . bin2hex(random_bytes(2));
         $data = $this->ok(self::CUSTOMER_CREATE, ['in' => [[
             'name' => "Panel customer $ref",
             'ref' => $ref,
@@ -118,6 +196,7 @@ class PanelFlowTest extends TestCase
             'lines' => [['stockId' => '301', 'quantity' => 2, 'unitPrice' => 50, 'description' => 'Hosting']],
             'recurring' => ['start' => $this->today(), 'repeats' => 'MONTH', 'every' => 1, 'day' => 1],
         ]]]);
+        $this->orders[] = (int) $data['salesOrderCreate'][0]['id'];
 
         return $data['salesOrderCreate'][0];
     }
@@ -199,7 +278,13 @@ class PanelFlowTest extends TestCase
             'UPDATE ' . $this->table('sales_order_details') . ' SET qty_sent = 1 WHERE order_no = ? AND trans_type = 30'
         )->execute([(int) $order['id']]);
 
-        $this->ok(self::ORDER_DELETE, ['ids' => [$order['id']]]);
+        $response = $this->gql(self::ORDER_DELETE, ['ids' => [$order['id']]], $this->token);
+        $this->assertArrayNotHasKey('errors', $response['body'], $response['raw']);
+        $this->assertStringContainsString(
+            'closed',
+            implode("\n", $response['body']['extensions']['warnings'] ?? []),
+            'the close is reported in extensions.warnings'
+        );
 
         $closed = $this->readOrder($order['id']);
         $this->assertCount(1, $closed, 'a delivered order is closed, not deleted');
@@ -208,15 +293,18 @@ class PanelFlowTest extends TestCase
         $this->assertSame($this->today(), $closed[0]['recurring']['end'], 'closing ends the schedule today');
     }
 
-    public function testAStaleOrderVersionCannotDeleteEither(): void
+    /**
+     * salesOrderDelete takes ids only (the Task 10 ruling; spec section 4.4, revised):
+     * an order updated since it was read is still deleted by its id.
+     */
+    public function testAnIdOnlyDeleteSucceedsWhateverTheVersion(): void
     {
         $order = $this->createRecurringOrder($this->createCustomer());
         $this->ok(self::ORDER_UPDATE, ['in' => [[
             'id' => $order['id'], 'version' => $order['version'], 'comments' => 'moved on',
         ]]]);
 
-        // Only meaningful when salesOrderDelete takes a version (Step 2). Without one,
-        // this test asserts the id-only delete still works on the updated order.
+        // The version read before the update is now stale; the delete does not ask for it.
         $deleted = $this->ok(self::ORDER_DELETE, ['ids' => [$order['id']]]);
         $this->assertSame($order['id'], $deleted['salesOrderDelete'][0]['id']);
     }

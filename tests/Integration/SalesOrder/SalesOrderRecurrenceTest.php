@@ -3,6 +3,8 @@
 namespace FA\GraphQL\Tests\Integration\SalesOrder;
 
 use FA\GraphQL\Error\BadInput;
+use FA\GraphQL\Error\FaRejected;
+use FA\GraphQL\Fa\CompanyContext;
 use FA\GraphQL\Fa\FaSession;
 use FA\GraphQL\Fa\Service\RecurringSchedule;
 use FA\GraphQL\Fa\Service\SalesOrderService;
@@ -231,5 +233,38 @@ class SalesOrderRecurrenceTest extends SalesOrderTestCase
             $this->assertSame(RecurringSchedule::NOT_ACTIVE, $e->getMessage());
         }
         $this->assertNull($this->container->get(RecurringSchedule::class)->read($orderNo));
+    }
+
+    /**
+     * Release 2 spec section 3.3: sgw_sales active but its sales_recurring not at
+     * update_1.4.sql's shape is the installation's problem, FA_REJECTED naming the
+     * script, and the order goes with it. The shape check reads information_schema
+     * under the company's table prefix; pointing the company at a prefix with no
+     * sales_recurring gives the missing-table case without DDL (which would commit).
+     * FrontAccounting's own queries still use TB_PREF, so the order itself is written.
+     */
+    public function testAScheduleTableNotAtThe14ShapeIsRejectedNamingTheScript(): void
+    {
+        $connection = ['tbpref' => 'gqlt_none_'] + $GLOBALS['db_connections'][0];
+        CompanyContext::set(0, $connection);
+        $schedule = new RecurringSchedule($this->container->get(FaSession::class));
+        $this->assertTrue($this->container->get(FaSession::class)->isActive(RecurringSchedule::PACKAGE));
+        $this->container->set(RecurringSchedule::class, $schedule);
+        $orders = (int) $this->pdo()->query('SELECT COUNT(*) FROM 0_sales_orders')->fetchColumn();
+
+        try {
+            $this->createOrder(['recurring' => $this->monthly()]);
+            $this->fail('accepted');
+        } catch (FaRejected $e) {
+            $this->assertStringContainsString('gqlt_none_sales_recurring', $e->getMessage());
+            $this->assertStringContainsString('update_1.4.sql', $e->getMessage());
+            $this->assertSame([$e->getMessage()], $e->getExtensions()['messages'] ?? null);
+        }
+        $this->assertSame(
+            $orders,
+            (int) $this->pdo()->query('SELECT COUNT(*) FROM 0_sales_orders')->fetchColumn(),
+            'the order rolls back with its schedule'
+        );
+        $this->assertFalse($schedule->isAvailable(), 'and the schedule reads as none');
     }
 }
