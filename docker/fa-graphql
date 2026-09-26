@@ -365,7 +365,8 @@ cmd_db() {
         drop)   db_drop ;;
         dump)   db_dump "$@" ;;
         shell)  cmd_mysql ;;
-        *) die "usage: fa-graphql db <load [demo|new|<path>]|reset|drop|dump [file]|shell>" ;;
+        fixtures) db_fixtures ;;
+        *) die "usage: fa-graphql db <load [demo|new|<path>]|reset|drop|dump [file]|shell|fixtures>" ;;
     esac
 }
 
@@ -495,6 +496,22 @@ db_drop() {
     info "dropping database '$DB_NAME'"
     db_mysql -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; CREATE DATABASE \`$DB_NAME\`;
                  GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'%';"
+}
+
+# Realistic hosting-billing data for developers and the panel app, on top of
+# whatever dataset is loaded — never tests/data/seed.sql, which the test suites load
+# and which this leaves untouched. First tests/data/dev-fixtures.sql (idempotent,
+# same prefix rewriting as any other dataset): the 'yr' item unit and the HDOM /
+# HGEN1 items and prices. Then docker/fixtures.php creates the example customer,
+# orders, invoice and payment THROUGH THE GRAPHQL API itself, as apitest — skipping
+# that part, and saying so, if the example customer already exists.
+db_fixtures() {
+    ensure_running
+    wait_for_db
+    info "applying tests/data/dev-fixtures.sql"
+    prefix_filter < "$PROJECT_ROOT/tests/data/dev-fixtures.sql" | db_mysql "$DB_NAME"
+    info "creating example documents through the GraphQL API"
+    c_exec_user php "$APP_DIR/docker/fixtures.php"
 }
 
 db_dump() {
@@ -711,6 +728,10 @@ Database
   db drop            Drop and recreate it empty
   db dump [file]     mysqldump to a .sql.gz (default: tmp/<db>-<stamp>.sql.gz)
   db shell           mysql client on the application database
+  db fixtures        Load tests/data/dev-fixtures.sql (HDOM/HGEN1 items, prices),
+                     then create an example reseller customer, its recurring orders,
+                     an invoice and a payment through the GraphQL API. Idempotent;
+                     never touches tests/data/seed.sql or what the test suites load.
 
 Testing and development
   test [args]        Run the PHPUnit suite (composer test)
