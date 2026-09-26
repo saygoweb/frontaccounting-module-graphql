@@ -10,6 +10,11 @@ use FA\GraphQL\Error\BadInput;
  * read() puts any unallocated remainder on the earliest open items (:185-202), which
  * an API must never do behind its client's back (Release 3 spec section 5, ruling 8).
  * check_allocations() (:373-437) reads $_POST; its rules are ported in validate().
+ *
+ * The API allocates to invoices only. An allocation the payment already has to
+ * anything else — a sales-order prepayment, a journal, a bank payment, made in
+ * FrontAccounting's UI — is kept at its current amount, and counts towards what the
+ * payment may allocate (Checkpoint C M-1): the list replaces the invoice allocations.
  */
 final class PaymentAllocations
 {
@@ -28,7 +33,7 @@ final class PaymentAllocations
         string $field = 'allocations'
     ): void {
         $cart = new \allocation(ST_CUSTPAYMENT, $paymentNo, $customerId, PT_CUSTOMER);
-        self::validate($cart, $limit, $allocations, $field);
+        self::validate($cart, $limit, $allocations, $field, self::kept($paymentNo));
         // customer_payments.php :248-250: the payment's number and date, then write().
         $cart->trans_no = $paymentNo;
         $cart->date_ = $faDate;
@@ -36,23 +41,55 @@ final class PaymentAllocations
     }
 
     /**
-     * Zero every item the cart offers, then set the ones asked for, checking each.
+     * Zero every item the cart offers, put back the kept ones, then set the invoices
+     * asked for, checking each.
      *
      * @param array<int, array{invoiceId: mixed, amount: mixed}> $allocations
+     * @param array<string, array{type: int, no: int, amount: float}> $kept "type/no" =>
+     *     the payment's current allocations to anything but an invoice
      */
     public static function validate(
         \allocation $cart,
         float $limit,
         array $allocations,
-        string $field = 'allocations'
+        string $field = 'allocations',
+        array $kept = []
     ): void {
         foreach ($cart->allocs as $item) {
             $item->current_allocated = 0;
         }
 
+        $total = 0.0;
+        foreach ($kept as $key => $allocation) {
+            $item = null;
+            foreach ($cart->allocs as $candidate) {
+                if ((int) $candidate->type . '/' . (int) $candidate->type_no === $key) {
+                    $item = $candidate;
+                    break;
+                }
+            }
+            if ($item === null) {
+                // The cart skips a target with nothing left (add_item(), a zero Total):
+                // add it, or write() would drop the allocation it clears.
+                $item = new \allocation_item(
+                    $allocation['type'],
+                    $allocation['no'],
+                    '',
+                    '',
+                    $allocation['amount'],
+                    0,
+                    0,
+                    '',
+                    ''
+                );
+                $cart->allocs[] = $item;
+            }
+            $item->current_allocated = $allocation['amount'];
+            $total += $allocation['amount'];
+        }
+
         $dec = user_price_dec();
         $seen = [];
-        $total = 0.0;
         foreach (array_values($allocations) as $index => $allocation) {
             $itemField = "$field.$index";
             $invoiceNo = IntKey::parse($allocation['invoiceId'] ?? null, "$itemField.invoiceId");
@@ -95,6 +132,36 @@ final class PaymentAllocations
                 $field
             );
         }
+    }
+
+    /**
+     * The payment's current allocations to anything but an invoice; none for a
+     * payment not yet written.
+     *
+     * @return array<string, array{type: int, no: int, amount: float}>
+     */
+    private static function kept(int $paymentNo): array
+    {
+        $kept = [];
+        if ($paymentNo === 0) {
+            return $kept;
+        }
+        $result = db_query(
+            'SELECT trans_type_to, trans_no_to, SUM(amt) AS amt FROM ' . TB_PREF . 'cust_allocations'
+            . ' WHERE trans_type_from = ' . ST_CUSTPAYMENT . ' AND trans_no_from = ' . db_escape($paymentNo)
+            . ' AND trans_type_to <> ' . ST_SALESINVOICE
+            . ' GROUP BY trans_type_to, trans_no_to ORDER BY trans_type_to, trans_no_to',
+            'could not read the payment\'s allocations'
+        );
+        while ($row = db_fetch($result)) {
+            $kept[(int) $row['trans_type_to'] . '/' . (int) $row['trans_no_to']] = [
+                'type' => (int) $row['trans_type_to'],
+                'no' => (int) $row['trans_no_to'],
+                'amount' => (float) $row['amt'],
+            ];
+        }
+
+        return $kept;
     }
 
     private static function item(\allocation $cart, int $invoiceNo): ?\allocation_item

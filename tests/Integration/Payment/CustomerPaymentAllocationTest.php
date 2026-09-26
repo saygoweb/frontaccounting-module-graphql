@@ -58,6 +58,85 @@ class CustomerPaymentAllocationTest extends PaymentTestCase
         $this->assertSame([$invoice => ['type' => '10', 'amount' => (string) $total]], $this->allocationsOf($no));
     }
 
+    /**
+     * Allocate $amount of the payment to sales order $orderNo directly, as
+     * FrontAccounting's allocation page would (the API cannot target orders).
+     */
+    private function allocateToOrder(int $paymentNo, int $orderNo, float $amount): void
+    {
+        $this->locked(function () use ($paymentNo, $orderNo, $amount): void {
+            add_cust_allocation($amount, 12, $paymentNo, 30, $orderNo, self::HOME_CUSTOMER, \Today());
+            update_debtor_trans_allocation(30, $orderNo, self::HOME_CUSTOMER);
+            update_debtor_trans_allocation(12, $paymentNo, self::HOME_CUSTOMER);
+        });
+    }
+
+    /**
+     * @return array<string, string> the payment's allocations, "type/no" => amount
+     */
+    private function allocationsByType(int $paymentNo): array
+    {
+        $statement = $this->pdo()->prepare(
+            'SELECT trans_type_to, trans_no_to, amt FROM 0_cust_allocations
+             WHERE trans_type_from = 12 AND trans_no_from = ? ORDER BY trans_type_to, trans_no_to'
+        );
+        $statement->execute([$paymentNo]);
+        $rows = [];
+        foreach ($statement->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+            $rows[$row['trans_type_to'] . '/' . $row['trans_no_to']] = (string) round((float) $row['amt'], 2);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Checkpoint C M-1: the list replaces the invoice allocations only; one made in
+     * FrontAccounting's UI to anything else (here a sales order) stays as it is.
+     */
+    public function testAnAllocationToSomethingOtherThanAnInvoiceIsKept(): void
+    {
+        $first = $this->invoice();
+        $second = $this->invoice();
+        $total = $this->invoiceTotal($first);
+        $orderNo = $this->createOrder([
+            'customerId' => self::HOME_CUSTOMER,
+            'branchId' => self::HOME_BRANCH,
+            'lines' => [['stockId' => '101', 'quantity' => 1.0]],
+        ]);
+        $no = $this->pay(['amount' => $total + 20.0, 'allocations' => [['invoiceId' => $first, 'amount' => $total]]]);
+        $this->allocateToOrder($no, $orderNo, 20.0);
+
+        $this->reallocate($no, [['invoiceId' => $second, 'amount' => $total]]);
+
+        $this->assertSame(
+            ['10/' . $second => (string) $total, '30/' . $orderNo => '20'],
+            $this->allocationsByType($no)
+        );
+        $this->assertEqualsWithDelta(20.0, (float) $this->orderRow($orderNo)['alloc'], 0.001);
+        $this->assertEqualsWithDelta($total + 20.0, (float) $this->transRow(12, $no)['alloc'], 0.001);
+        $this->assertEqualsWithDelta(0.0, (float) $this->transRow(10, $first)['alloc'], 0.001);
+
+        // The kept 20 counts towards what the payment may allocate: total + 20 is all.
+        try {
+            $this->reallocate($no, [
+                ['invoiceId' => $first, 'amount' => $total],
+                ['invoiceId' => $second, 'amount' => 1.0],
+            ]);
+            $this->fail('Expected a refusal.');
+        } catch (BadInput $e) {
+            $this->assertSame('allocations', $e->field());
+        }
+        $this->assertSame(
+            ['10/' . $second => (string) $total, '30/' . $orderNo => '20'],
+            $this->allocationsByType($no)
+        );
+
+        // An empty list removes the invoice allocations only.
+        $this->reallocate($no, []);
+        $this->assertSame(['30/' . $orderNo => '20'], $this->allocationsByType($no));
+        $this->assertEqualsWithDelta(20.0, (float) $this->transRow(12, $no)['alloc'], 0.001);
+    }
+
     public function testOverAllocationIsRefusedOnUpdate(): void
     {
         $invoice = $this->invoice();

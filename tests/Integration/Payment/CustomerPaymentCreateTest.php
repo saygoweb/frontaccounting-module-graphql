@@ -105,6 +105,82 @@ class CustomerPaymentCreateTest extends PaymentTestCase
         $this->assertSame('branchId', $e->field());
     }
 
+    /**
+     * :151-155 and :324-328: a customer without branches pays against ANY_NUMERIC,
+     * posted to the company's receivables account; naming a branch is refused.
+     */
+    public function testACustomerWithoutBranchesPaysWithoutOne(): void
+    {
+        $customerId = $this->branchlessCustomer();
+        try {
+            $e = $this->refusal(function () use ($customerId) {
+                return $this->payments()->create($this->paymentInput(['customerId' => $customerId]));
+            });
+            $this->assertInstanceOf(BadInput::class, $e, $e->getMessage());
+            $this->assertSame('branchId', $e->field());
+
+            $input = $this->paymentInput(['customerId' => $customerId, 'amount' => 40.0]);
+            unset($input['branchId']);
+            $no = $this->locked(function () use ($input): int {
+                return $this->payments()->create($input);
+            });
+
+            $row = $this->transRow(12, $no);
+            $this->assertSame((string) $customerId, $row['debtor_no']);
+            $this->assertSame('-1', $row['branch_code'], 'ANY_NUMERIC');
+            $debtors = (string) get_company_pref('debtors_act');
+            $this->assertSame(['1060' => 40.0, $debtors => -40.0], $this->glByAccount(12, $no));
+            $this->assertSame(0.0, $this->glSum(12, $no));
+
+            $this->locked(function () use ($no): void {
+                $this->payments()->delete($no);
+            });
+            $this->assertSame([], $this->glByAccount(12, $no), 'the void nets every account to zero');
+            $this->assertSame(0.0, $this->glSum(12, $no));
+        } finally {
+            $this->removeCustomer($customerId);
+        }
+    }
+
+    /**
+     * :199 and check_allocations() :430: the discount is posted to the branch's
+     * payment-discount account, and the payment may allocate its amount plus discount.
+     */
+    public function testADiscountIsPostedAndCountsTowardsTheAllocations(): void
+    {
+        $invoice = $this->invoice();
+        $total = $this->invoiceTotal($invoice);
+        $branch = $this->pdo()->prepare('SELECT payment_discount_account FROM 0_cust_branch WHERE branch_code = ?');
+        $branch->execute([self::HOME_BRANCH]);
+        $discountAccount = (string) $branch->fetchColumn();
+
+        $e = $this->refusal(function () use ($invoice, $total) {
+            return $this->payments()->create($this->paymentInput([
+                'amount' => $total - 5.0,
+                'discount' => 5.0,
+                'allocations' => [['invoiceId' => $invoice, 'amount' => $total + 1.0]],
+            ]));
+        });
+        $this->assertInstanceOf(BadInput::class, $e, $e->getMessage());
+        $this->assertSame('allocations.0.amount', $e->field());
+
+        $no = $this->pay([
+            'amount' => $total - 5.0,
+            'discount' => 5.0,
+            'allocations' => [['invoiceId' => $invoice, 'amount' => $total]],
+        ]);
+
+        $this->assertEqualsWithDelta(5.0, (float) $this->transRow(12, $no)['ov_discount'], 0.001);
+        $this->assertSame(
+            ['1060' => round($total - 5.0, 2), '1200' => -$total, $discountAccount => 5.0],
+            $this->glByAccount(12, $no)
+        );
+        $this->assertSame(0.0, $this->glSum(12, $no));
+        $this->assertSame([$invoice => ['type' => '10', 'amount' => (string) $total]], $this->allocationsOf($no));
+        $this->assertEqualsWithDelta($total, (float) $this->transRow(10, $invoice)['alloc'], 0.001);
+        $this->assertEqualsWithDelta($total, (float) $this->transRow(12, $no)['alloc'], 0.001);
+    }
+
     public function testAChargeIsPostedToTheBankChargeAccount(): void
     {
         $no = $this->pay(['amount' => 30.0, 'charge' => 1.5]);
@@ -133,6 +209,51 @@ class CustomerPaymentCreateTest extends PaymentTestCase
             'bankAmount' => 12.0,
         ]);
         $this->assertSame(0.0, $this->glSum(12, $no), 'the exchange difference balances the GL');
+    }
+
+    /**
+     * Checkpoint C I-1: the page shows bank_amount only when the currencies differ
+     * (customer_payments.php :363-366) and otherwise posts the amount (:246). A
+     * different bankAmount in one currency would book the gap as an exchange
+     * variation, so it is refused, naming the field and the batch item.
+     */
+    public function testASameCurrencyBankAmountOtherThanTheAmountIsRefused(): void
+    {
+        $payments = $this->paymentCount();
+        $gl = (int) $this->pdo()->query('SELECT COUNT(*) FROM 0_gl_trans')->fetchColumn();
+        $bank = (int) $this->pdo()->query('SELECT COUNT(*) FROM 0_bank_trans')->fetchColumn();
+
+        try {
+            DocumentLock::run(function (): array {
+                return ServiceCall::each(
+                    [
+                        $this->paymentInput(),
+                        $this->paymentInput(['amount' => 100.0, 'bankAmount' => 50.0]),
+                    ],
+                    function (array $input): int {
+                        return $this->payments()->create($input);
+                    }
+                );
+            });
+            $this->fail('Expected the bank amount to be refused.');
+        } catch (BadInput $e) {
+            $this->assertSame('bankAmount', $e->field());
+            $this->assertSame(1, $e->index());
+        }
+
+        $this->assertSame($payments, $this->paymentCount(), 'nothing written');
+        $this->assertSame($gl, (int) $this->pdo()->query('SELECT COUNT(*) FROM 0_gl_trans')->fetchColumn());
+        $this->assertSame($bank, (int) $this->pdo()->query('SELECT COUNT(*) FROM 0_bank_trans')->fetchColumn());
+    }
+
+    public function testASameCurrencyBankAmountEqualToTheAmountIsAccepted(): void
+    {
+        $no = $this->pay(['amount' => 100.0, 'bankAmount' => 100.004]);
+
+        $bank = $this->pdo()->prepare('SELECT amount FROM 0_bank_trans WHERE type = 12 AND trans_no = ?');
+        $bank->execute([$no]);
+        $this->assertEqualsWithDelta(100.0, (float) $bank->fetchColumn(), 0.001);
+        $this->assertSame(0.0, $this->glSum(12, $no));
     }
 
     public function testAllocationsAreWrittenExactlyAsGiven(): void

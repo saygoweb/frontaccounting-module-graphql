@@ -81,14 +81,27 @@ class CustomerPaymentService
             throw new FaRejected($message, [$message]);
         }
 
-        // :211, and the bank amount's default: the amount, when the bank's currency is
-        // the customer's (customer_payments.php :246, input_num('bank_amount', amount)).
+        // :211, and the bank amount: the amount, when the bank's currency is the
+        // customer's — the page shows bank_amount only when they differ (:363-366) and
+        // otherwise posts input_num('bank_amount', amount) (:246). A different amount
+        // in one currency would book the gap as an exchange variation (Checkpoint C I-1).
         $customerCurrency = get_customer_currency($customerId);
         $bankCurrency = (string) $bank['bank_curr_code'];
         if (array_key_exists('bankAmount', $input) && $input['bankAmount'] !== null) {
             $bankAmount = (float) $input['bankAmount'];
             if ($bankAmount <= 0) {
                 throw new BadInput('The bank amount must be above zero.', 'bankAmount');
+            }
+            if ($bankCurrency === $customerCurrency) {
+                $dec = user_price_dec();
+                if (round($bankAmount, $dec) != round($amount, $dec)) {
+                    throw new BadInput(
+                        "The payment and the bank account are both in $customerCurrency: "
+                        . 'omit the bank amount, or give the amount.',
+                        'bankAmount'
+                    );
+                }
+                $bankAmount = $amount;
             }
         } elseif ($bankCurrency === $customerCurrency) {
             $bankAmount = $amount;
@@ -149,7 +162,8 @@ class CustomerPaymentService
     }
 
     /**
-     * Replace a payment's allocations (spec section 5): nothing else can change.
+     * Replace a payment's invoice allocations (spec section 5): nothing else can
+     * change, and its allocations to anything but an invoice are kept (PaymentAllocations).
      *
      * @param array<string, mixed> $input a CustomerPaymentUpdateInput
      */

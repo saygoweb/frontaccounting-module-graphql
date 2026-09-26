@@ -141,26 +141,30 @@ class CustomerPaymentType extends CustomerPaymentTypeBase
     }
 
     /**
-     * Voids (spec section 5): returns each payment as it was, allocations included.
+     * Voids (spec section 5): returns each payment as it was, allocations included —
+     * read under the document lock, so no API reallocation can land between the read
+     * and the void (Checkpoint C M-5).
      */
     public function resolveDelete($root, $args, Container $context): array
     {
         $this->authorize(self::VERB_DELETE, null, $context);
         $ids = self::intIds($args['id']);
-        $before = [];
-        foreach ($this->rowsById($context, $ids, self::VERB_DELETE) as $index => $row) {
-            $row['allocations'] = self::allocationsOf($ids[$index], $context);
-            $row['voided'] = $context->get(Voider::class)->isVoided(CustomerPaymentService::TRANS_TYPE, $ids[$index]);
-            $before[] = $row;
-        }
         $service = $context->get(CustomerPaymentService::class);
-        DocumentLock::run(function () use ($ids, $service): void {
+
+        return DocumentLock::run(function () use ($ids, $service, $context): array {
+            $before = [];
+            foreach ($this->rowsById($context, $ids, self::VERB_DELETE) as $index => $row) {
+                $row['allocations'] = self::allocationsOf($ids[$index], $context);
+                $row['voided'] = $context->get(Voider::class)
+                    ->isVoided(CustomerPaymentService::TRANS_TYPE, $ids[$index]);
+                $before[] = $row;
+            }
             ServiceCall::each($ids, function (int $id) use ($service): void {
                 $service->delete($id);
             });
-        });
 
-        return $before;
+            return $before;
+        });
     }
 
     /**

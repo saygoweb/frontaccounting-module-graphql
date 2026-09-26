@@ -218,6 +218,37 @@ exchange-variation GL, so reallocating a foreign-currency payment can post
 variations twice. `customerPaymentUpdate` is refused for a payment whose currency
 differs from the company currency when it already has allocations (§9).
 
+*(revised)* As built (Release 3 Task 5, Checkpoint C):
+
+- **`bankAmount` in one currency.** When the customer's currency is the bank
+  account's, `bankAmount` may be omitted (it is `amount`) or given equal to `amount`
+  (compared at `user_price_dec()`); any other value is `BAD_INPUT` on `bankAmount`
+  (with the batch item's index), and nothing is written. FrontAccounting's page
+  shows `bank_amount` only when the currencies differ (`customer_payments.php`
+  :363-366) and otherwise posts the amount (:246); a different bank amount would book
+  the gap to the exchange-variation account on a payment with no exchange
+  (Checkpoint C I-1). When the currencies differ, `bankAmount` stays required.
+- **Reallocation replaces invoice allocations only.** The API allocates to invoices
+  (`trans_type_to` 10). A payment's allocations to anything else — a sales-order
+  prepayment, a journal, a bank payment, made in FrontAccounting's UI — are kept at
+  their current amounts by `customerPaymentUpdate` (an empty list removes the invoice
+  allocations and keeps those), and they count towards the total checked against
+  `amount + discount + allocation_settled_allowance()` (Checkpoint C M-1). Voiding
+  the payment still clears every allocation, as FrontAccounting does.
+- **`CustomerPayment` computed fields as built:** `allocations`, `unallocated`,
+  `bankAccountId`, `bankAmount`, `charge`, and also `memo` (the payment's
+  `comments` memo, or null) and `voided` (a voided payment's row stays, its amounts
+  zeroed). `customerPaymentDelete` returns each payment as it was before the void,
+  read under the document lock.
+- **`CustomerType.balance`** is FrontAccounting's `get_customer_details(id, null,
+  false)` — `$all = false`, as `customer_inquiry.php` shows it; an unallocated
+  payment counts as negative. That call returns no row for a customer with nothing
+  unallocated (its WHERE drops the LEFT JOIN's null row), so `balance` is then zeros
+  in the customer's currency; it is null only when the `$all = true` call has no row
+  either (payment terms or credit status missing). `balance` needs
+  `SA_SALESTRANSVIEW` besides the customer's own `SA_CUSTOMER`; without it the field
+  is null with a `FORBIDDEN` error while the rest of the customer is read.
+
 ## 6. Emailing invoices
 
 **`invoiceEmail(id: [ID!]!): [InvoiceEmailResult!]!`** — hand-written (an action,

@@ -30,6 +30,8 @@ abstract class PaymentTestCase extends BillingTestCase
     protected const EUR_BRANCH = 2;
     /** Demo bank account 1: USD current account. */
     protected const BANK = 1;
+    /** Demo bank account 2: USD cash account (account_type 3, balance-checked). */
+    protected const CASH_BANK = 2;
 
     protected function payments(): CustomerPaymentService
     {
@@ -151,6 +153,46 @@ abstract class PaymentTestCase extends BillingTestCase
         $statement->execute([$type, $transNo]);
 
         return round((float) $statement->fetchColumn(), 2);
+    }
+
+    /**
+     * A customer with no branches, in the company currency: a copy of demo customer
+     * 1's master row. Removed with removeCustomer().
+     */
+    protected function branchlessCustomer(): int
+    {
+        $this->pdo()->prepare(
+            "INSERT INTO 0_debtors_master (name, debtor_ref, address, tax_id, curr_code, sales_type,
+                credit_status, payment_terms, credit_limit, notes)
+             SELECT 'GQL no-branch customer', 'GQLNOBRANCH', address, tax_id, curr_code, sales_type,
+                credit_status, payment_terms, credit_limit, ''
+             FROM 0_debtors_master WHERE debtor_no = ?"
+        )->execute([self::HOME_CUSTOMER]);
+
+        return (int) $this->pdo()->lastInsertId();
+    }
+
+    protected function removeCustomer(int $customerId): void
+    {
+        $this->pdo()->prepare('DELETE FROM 0_debtors_master WHERE debtor_no = ?')->execute([$customerId]);
+    }
+
+    /**
+     * @return array<string, float> the document's GL, account => amount
+     */
+    protected function glByAccount(int $type, int $transNo): array
+    {
+        $statement = $this->pdo()->prepare(
+            'SELECT account, ROUND(SUM(amount), 2) AS amount FROM 0_gl_trans WHERE type = ? AND type_no = ?
+             GROUP BY account HAVING ROUND(SUM(amount), 2) <> 0 ORDER BY account'
+        );
+        $statement->execute([$type, $transNo]);
+        $rows = [];
+        foreach ($statement->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+            $rows[(string) $row['account']] = (float) $row['amount'];
+        }
+
+        return $rows;
     }
 
     protected function paymentCount(): int
