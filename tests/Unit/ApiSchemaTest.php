@@ -59,15 +59,18 @@ class ApiSchemaTest extends TestCase
         $query = array_keys($schema->getQueryType()->getFields());
         sort($query);
         $expected = [
-            'apiVersion', 'creditStatusList', 'currencyList', 'customerList', 'locationList', 'me',
-            'paymentTermsList', 'salesAreaList', 'salesTypeList', 'salesmanList',
+            'apiVersion', 'branchList', 'contactList', 'creditStatusList', 'currencyList', 'customerList',
+            'locationList', 'me', 'paymentTermsList', 'salesAreaList', 'salesTypeList', 'salesmanList',
             'shipperList', 'stockItemList', 'taxGroupList',
         ];
         sort($expected);
 
         $this->assertSame($expected, $query);
         $this->assertSame(
-            ['customerCreate', 'customerDelete', 'customerUpdate', 'login', 'tokenRefresh', 'tokenRevoke'],
+            [
+                'branchCreate', 'branchDelete', 'branchUpdate', 'contactCreate', 'contactDelete', 'contactUpdate',
+                'customerCreate', 'customerDelete', 'customerUpdate', 'login', 'tokenRefresh', 'tokenRevoke',
+            ],
             array_keys($schema->getMutationType()->getFields())
         );
         $this->assertNull($schema->getSubscriptionType());

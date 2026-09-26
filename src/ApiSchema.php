@@ -7,6 +7,12 @@ use Anorm\GraphQL\Type\MangoInput;
 use DI\Container;
 use FA\GraphQL\Type\Auth\AuthMutations;
 use FA\GraphQL\Type\Auth\AuthPayloadType;
+use FA\GraphQL\Type\Branch\BranchCreateInput;
+use FA\GraphQL\Type\Branch\BranchType;
+use FA\GraphQL\Type\Branch\BranchUpdateInput;
+use FA\GraphQL\Type\Contact\ContactCreateInput;
+use FA\GraphQL\Type\Contact\ContactType;
+use FA\GraphQL\Type\Contact\ContactUpdateInput;
 use FA\GraphQL\Type\CreditStatus\CreditStatusType;
 use FA\GraphQL\Type\Currency\CurrencyType;
 use FA\GraphQL\Type\Customer\CustomerCreateInput;
@@ -55,6 +61,14 @@ class ApiSchema extends Schema
                             return self::VERSION;
                         },
                     ],
+                    // anorm-graphql
+                    GraphQLUtils::createListField('branchList', $this->type(BranchType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('contactList', $this->type(ContactType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
                     // anorm-graphql
                     GraphQLUtils::createListField(
                         'creditStatusList',
@@ -119,6 +133,42 @@ class ApiSchema extends Schema
             'mutation' => new ObjectType([
                 'name' => 'Mutation',
                 'fields' => [
+                    // anorm-graphql
+                    GraphQLUtils::createListField('branchCreate', $this->type(BranchType::class), 'resolveCreate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(BranchCreateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('branchDelete', $this->type(BranchType::class), 'resolveDelete')
+                        ->addArgument('id', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('branchUpdate', $this->type(BranchType::class), 'resolveUpdate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(BranchUpdateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('contactCreate', $this->type(ContactType::class), 'resolveCreate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(ContactCreateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('contactDelete', $this->type(ContactType::class), 'resolveDelete')
+                        ->addArgument('id', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('contactUpdate', $this->type(ContactType::class), 'resolveUpdate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(ContactUpdateInput::class))))
+                        )
+                        ->build(),
                     // anorm-graphql
                     GraphQLUtils::createListField('customerCreate', $this->type(CustomerType::class), 'resolveCreate')
                         ->addArgument(
