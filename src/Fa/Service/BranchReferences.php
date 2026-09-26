@@ -10,11 +10,11 @@ namespace FA\GraphQL\Fa\Service;
 final class BranchReferences
 {
     public const REFS = [
-        'salesmanId' => ['salesman', 'salesman_code', 'salesperson'],
-        'salesAreaId' => ['areas', 'area_code', 'sales area'],
-        'taxGroupId' => ['tax_groups', 'id', 'tax group'],
-        'locationId' => ['locations', 'loc_code', 'location'],
-        'shipperId' => ['shippers', 'shipper_id', 'shipper'],
+        'salesmanId' => ['salesman', 'salesman_code', 'salesperson', true],
+        'salesAreaId' => ['areas', 'area_code', 'sales area', true],
+        'taxGroupId' => ['tax_groups', 'id', 'tax group', true],
+        'locationId' => ['locations', 'loc_code', 'location', false],
+        'shipperId' => ['shippers', 'shipper_id', 'shipper', true],
     ];
 
     /**

@@ -36,3 +36,9 @@ WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3072', REPLACE(`sections`, ';', ',
 UPDATE `0_security_roles`
 SET `areas` = CONCAT(`areas`, ';3075')
 WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3075', REPLACE(`areas`, ';', ',')) = 0;
+
+-- SA_CUSTOMER: customers, branches and contacts are written with it (Release 2 spec
+-- section 4.3). Area SS_SALES | 2 = 3074; appended only when missing, as above.
+UPDATE `0_security_roles`
+SET `areas` = CONCAT(`areas`, ';3074')
+WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3074', REPLACE(`areas`, ';', ',')) = 0;

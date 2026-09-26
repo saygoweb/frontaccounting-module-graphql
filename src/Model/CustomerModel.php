@@ -37,8 +37,11 @@ class CustomerModel extends Model
     /** @var string|null */
     public $address;
 
-    /** @var string Tax registration number (the page's "GSTNo") */
-    public $taxId = '';
+    /**
+     * @var string Tax registration number (tax_id; the page's "GSTNo"). Free text,
+     * not a reference, so its name does not end in "Id" (Foundation spec §4.4).
+     */
+    public $taxNumber = '';
 
     /** @var string Currency code (curr_code); defaults to the company currency */
     public $currencyId = '';
@@ -84,7 +87,7 @@ class CustomerModel extends Model
             'name' => 'name',
             'ref' => 'debtor_ref',
             'address' => 'address',
-            'taxId' => 'tax_id',
+            'taxNumber' => 'tax_id',
             'currencyId' => 'curr_code',
             'salesTypeId' => 'sales_type',
             'creditStatusId' => 'credit_status',

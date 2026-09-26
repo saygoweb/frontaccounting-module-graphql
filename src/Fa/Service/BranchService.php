@@ -29,7 +29,7 @@ final class BranchService
         FaIncludes::customers();
         $customerId = $input['customerId'] ?? null;
         $customerKnown = $customerId !== null && $customerId !== ''
-            && ReferenceCheck::exists('debtors_master', 'debtor_no', $customerId);
+            && ReferenceCheck::exists('debtors_master', 'debtor_no', IntKey::parse($customerId, 'customerId'));
         if (!$customerKnown) {
             throw new BadInput("There is no customer '$customerId'.", 'customerId');
         }

@@ -23,7 +23,7 @@ final class CustomerService
 {
     /** The generated input fields this service writes (the key and inactive aside). */
     private const FIELDS = [
-        'name', 'ref', 'address', 'taxId', 'currencyId', 'salesTypeId', 'creditStatusId',
+        'name', 'ref', 'address', 'taxNumber', 'currencyId', 'salesTypeId', 'creditStatusId',
         'paymentTermsId', 'discountPercent', 'paymentDiscountPercent', 'creditLimit', 'notes',
     ];
 
@@ -31,10 +31,10 @@ final class CustomerService
     private const NULLABLE = ['address'];
 
     private const REFS = [
-        'salesTypeId' => ['sales_types', 'id', 'sales type'],
-        'paymentTermsId' => ['payment_terms', 'terms_indicator', 'payment terms'],
-        'creditStatusId' => ['credit_status', 'id', 'credit status'],
-        'currencyId' => ['currencies', 'curr_abrev', 'currency'],
+        'salesTypeId' => ['sales_types', 'id', 'sales type', true],
+        'paymentTermsId' => ['payment_terms', 'terms_indicator', 'payment terms', true],
+        'creditStatusId' => ['credit_status', 'id', 'credit status', true],
+        'currencyId' => ['currencies', 'curr_abrev', 'currency', false],
     ];
 
     /**
@@ -70,7 +70,7 @@ final class CustomerService
             $customer['name'],
             $customer['ref'],
             (string) $customer['address'],
-            $customer['taxId'],
+            $customer['taxNumber'],
             $customer['currencyId'],
             0,
             0,
@@ -153,7 +153,7 @@ final class CustomerService
             $customer['name'],
             $customer['ref'],
             (string) $customer['address'],
-            $customer['taxId'],
+            $customer['taxNumber'],
             $customer['currencyId'],
             $row['dimension_id'],
             $row['dimension2_id'],
@@ -259,7 +259,7 @@ final class CustomerService
             'name' => '',
             'ref' => '',
             'address' => '',
-            'taxId' => '',
+            'taxNumber' => '',
             'currencyId' => get_company_currency(),
             'salesTypeId' => null,
             'creditStatusId' => null,
@@ -281,7 +281,7 @@ final class CustomerService
             'name' => $row['name'],
             'ref' => $row['debtor_ref'],
             'address' => $row['address'],
-            'taxId' => $row['tax_id'],
+            'taxNumber' => $row['tax_id'],
             'currencyId' => $row['curr_code'],
             'salesTypeId' => $row['sales_type'],
             'creditStatusId' => $row['credit_status'],

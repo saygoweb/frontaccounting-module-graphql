@@ -647,7 +647,7 @@ cmd_info() {
   Database      $DB_NAME as $DB_USER, tables prefixed '$DB_PREFIX'
                 from the host: mysql -h 127.0.0.1 -P ${DB_PORT} -u $DB_USER -p$DB_PASSWORD $DB_NAME
 
-  Logins        apitest / password (GraphQL API role, SA_GRAPHQL + SA_SALESTYPES)
+  Logins        apitest / password (GraphQL API role: SA_GRAPHQL, SA_SALESORDER, SA_CUSTOMER)
                 noapi / password   (System Administrator, no SA_GRAPHQL)
 
   This checkout $PROJECT_ROOT -> $APP_DIR

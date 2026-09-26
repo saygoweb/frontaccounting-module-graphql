@@ -263,7 +263,71 @@ class CustomerServiceTest extends FaTestCase
                 ['branch' => ['salesmanId' => '999']], 'branch.salesmanId', "There is no salesperson '999'.",
             ],
             'location' => [['branch' => ['locationId' => 'NOPE']], 'branch.locationId', "There is no location 'NOPE'."],
+            // MySQL would cast '1 x' to 1 for the check, then strict mode refuse the
+            // insert as INTERNAL: an integer reference is a whole number or BAD_INPUT.
+            'sales type not a number' => [
+                ['salesTypeId' => '1 x'], 'salesTypeId', 'salesTypeId must be a positive whole number.',
+            ],
+            'payment terms not a number' => [
+                ['paymentTermsId' => '3.0'], 'paymentTermsId', 'paymentTermsId must be a positive whole number.',
+            ],
+            'credit status not a number' => [
+                ['creditStatusId' => ' 1'], 'creditStatusId', 'creditStatusId must be a positive whole number.',
+            ],
+            'salesperson not a number' => [
+                ['branch' => ['salesmanId' => '1 x']], 'branch.salesmanId',
+                'branch.salesmanId must be a positive whole number.',
+            ],
         ];
+    }
+
+    /**
+     * Spec section 3.1: a batch is one transaction; a guard's refusal of item 1 rolls
+     * back item 0 and names index 1, with its message in messages (spec section 5).
+     */
+    public function testAGuardRefusingOneItemOfABatchNamesItsIndexAndRollsBackTheBatch(): void
+    {
+        $id = $this->create($this->input());
+        $booked = $this->customerWithTransactions();
+        $other = $booked['curr_code'] === 'EUR' ? 'GBP' : 'EUR';
+
+        try {
+            ServiceCall::each(
+                [
+                    ['id' => $id, 'name' => 'Changed In A Batch'],
+                    ['id' => (int) $booked['debtor_no'], 'currencyId' => $other],
+                ],
+                function (array $input): void {
+                    $this->service()->update($input);
+                }
+            );
+            $this->fail('the batch was accepted');
+        } catch (FaRejected $e) {
+            $message = 'The currency of a customer with transactions or sales orders cannot be changed.';
+            $this->assertSame(
+                ['code' => 'FA_REJECTED', 'messages' => [$message], 'index' => 1],
+                $e->getExtensions()
+            );
+        }
+        $this->assertSame('GraphQL Test Customer', $this->customerByRef($this->prefix . 'c')['name']);
+    }
+
+    public function testAMissingRowInABatchNamesItsIndexAndRollsBackTheBatch(): void
+    {
+        $id = $this->create($this->input());
+
+        try {
+            ServiceCall::each(
+                [['id' => $id, 'name' => 'Changed In A Batch'], ['id' => 999999, 'name' => 'Nobody']],
+                function (array $input): void {
+                    $this->service()->update($input);
+                }
+            );
+            $this->fail('the batch was accepted');
+        } catch (NotFound $e) {
+            $this->assertSame(['code' => 'NOT_FOUND', 'index' => 1], $e->getExtensions());
+        }
+        $this->assertSame('GraphQL Test Customer', $this->customerByRef($this->prefix . 'c')['name']);
     }
 
     public function testANewCustomerNeedsBranchDefaultsWhileAutoCreateBranchIsOn(): void
@@ -312,12 +376,13 @@ class CustomerServiceTest extends FaTestCase
 
     public function testAnUpdateChangesWhatItNamesAndKeepsTheRest(): void
     {
-        $id = $this->create($this->input(['discountPercent' => 10]));
+        $id = $this->create($this->input(['discountPercent' => 10, 'taxNumber' => 'GB 123 4567 89']));
 
         $this->update(['id' => $id, 'name' => 'Renamed', 'paymentDiscountPercent' => 5, 'inactive' => true]);
 
         $customer = $this->customerByRef($this->prefix . 'c');
         $this->assertSame('Renamed', $customer['name']);
+        $this->assertSame('GB 123 4567 89', $customer['tax_id'], 'taxNumber is the tax_id column');
         $this->assertEqualsWithDelta(0.05, (float) $customer['pymt_discount'], 1e-9);
         $this->assertEqualsWithDelta(0.1, (float) $customer['discount'], 1e-9);
         $this->assertSame('1', (string) $customer['inactive']);

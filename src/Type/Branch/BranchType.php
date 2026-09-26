@@ -36,7 +36,7 @@ class BranchType extends BranchTypeBase
             return $branches->create($input);
         });
 
-        return $this->rowsById($context, $ids);
+        return $this->rowsById($context, $ids, self::VERB_CREATE);
     }
 
     public function resolveUpdate($root, $args, Container $context): array
@@ -50,14 +50,14 @@ class BranchType extends BranchTypeBase
             return $input['id'];
         });
 
-        return $this->rowsById($context, $ids);
+        return $this->rowsById($context, $ids, self::VERB_EDIT);
     }
 
     public function resolveDelete($root, $args, Container $context): array
     {
         $this->authorize(self::VERB_DELETE, null, $context);
         $ids = self::intIds($args['id']);
-        $rows = $this->rowsById($context, $ids);
+        $rows = $this->rowsById($context, $ids, self::VERB_DELETE);
         $branches = $context->get(BranchService::class);
         ServiceCall::each($ids, function (int $id) use ($branches): void {
             $branches->delete($id);

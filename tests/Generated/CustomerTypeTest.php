@@ -71,12 +71,10 @@ class CustomerTypeTest extends TestCase
             'name' => 'String',
             'ref' => 'String',
             'address' => 'String',
-            // taxId ends in "Id": anorm-graphql's naming convention (Foundation spec
-            // §4.4, "a foreign key ends in Id") types it ID regardless of its @var
-            // string, same as bin/generate actually wrote here — confirmed against
-            // the generated CustomerTypeBase::fields() and the generator's own first
-            // draft of this file before it was replaced.
-            'taxId' => 'ID',
+            // The tax registration number (tax_id) is free text, not a reference: a
+            // name ending in "Id" would make anorm-graphql type it ID (Foundation
+            // spec §4.4), so the property is taxNumber (Checkpoint B review M-2).
+            'taxNumber' => 'String',
             'currencyId' => 'ID',
             'salesTypeId' => 'ID',
             'creditStatusId' => 'ID',

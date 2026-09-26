@@ -107,6 +107,25 @@ class ContactServiceTest extends FaTestCase
         return $statement->fetchAll(\PDO::FETCH_ASSOC);
     }
 
+    /** A link this API does not model: to a supplier, as FrontAccounting's supplier pages make. */
+    private function linkToASupplier(int $personId): void
+    {
+        $this->pdo()->prepare(
+            "INSERT INTO 0_crm_contacts (person_id, type, action, entity_id) VALUES (?, 'supplier', 'general', '1')"
+        )->execute([$personId]);
+    }
+
+    /** A person who is only a supplier's contact. */
+    private function supplierContact(): int
+    {
+        $this->pdo()->prepare('INSERT INTO 0_crm_persons (ref, name, notes) VALUES (?, ?, ?)')
+            ->execute([$this->prefix . 's', 'Sam Supplier', '']);
+        $id = (int) $this->pdo()->lastInsertId();
+        $this->linkToASupplier($id);
+
+        return $id;
+    }
+
     private function assertBadInput(string $field, string $message, callable $call): void
     {
         try {
@@ -217,6 +236,66 @@ class ContactServiceTest extends FaTestCase
 
         $this->assertNull($this->one('SELECT id FROM 0_crm_persons WHERE id = ?', [$id]));
         $this->assertSame([], $this->links($id));
+    }
+
+    /**
+     * contacts_view.inc db_update(): the editor replaces only the links of its own
+     * class. A contact who is also a supplier's keeps that link.
+     */
+    public function testAnUpdateWithLinksReplacesOnlyCustomerAndBranchLinks(): void
+    {
+        $id = $this->create($this->input());
+        $this->linkToASupplier($id);
+
+        $this->update(['id' => $id, 'links' => [
+            ['entity' => 'customer', 'id' => (string) $this->customerId, 'category' => 'order'],
+        ]]);
+
+        $this->assertSame([
+            ['type' => 'customer', 'action' => 'order', 'entity_id' => (string) $this->customerId],
+            ['type' => 'supplier', 'action' => 'general', 'entity_id' => '1'],
+        ], $this->links($id));
+    }
+
+    /**
+     * contacts_view.inc db_delete(): the editor removes its own links, and the person
+     * only when no link is left.
+     */
+    public function testDeleteKeepsAPersonWhoIsStillASuppliersContact(): void
+    {
+        $id = $this->create($this->input());
+        $this->linkToASupplier($id);
+
+        $this->delete($id);
+
+        $this->assertNotNull($this->one('SELECT id FROM 0_crm_persons WHERE id = ?', [$id]));
+        $this->assertSame([['type' => 'supplier', 'action' => 'general', 'entity_id' => '1']], $this->links($id));
+    }
+
+    public function testAPersonWithNoCustomerOrBranchLinkIsNotFound(): void
+    {
+        $id = $this->supplierContact();
+
+        $calls = [
+            function () use ($id): void {
+                $this->update(['id' => $id, 'name' => 'Taken Over', 'links' => [
+                    ['entity' => 'customer', 'id' => (string) $this->customerId, 'category' => 'general'],
+                ]]);
+            },
+            function () use ($id): void {
+                $this->delete($id);
+            },
+        ];
+        foreach ($calls as $call) {
+            try {
+                $call();
+                $this->fail('a supplier contact was written');
+            } catch (NotFound $e) {
+                $this->assertSame("Contact id '$id' not found", $e->getMessage());
+            }
+        }
+        $this->assertSame('Sam Supplier', $this->one('SELECT name FROM 0_crm_persons WHERE id = ?', [$id])['name']);
+        $this->assertSame([['type' => 'supplier', 'action' => 'general', 'entity_id' => '1']], $this->links($id));
     }
 
     public function testDeleteOfAMissingContactIsNotFound(): void

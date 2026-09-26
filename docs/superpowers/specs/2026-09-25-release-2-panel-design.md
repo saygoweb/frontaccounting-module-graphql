@@ -1,7 +1,8 @@
 # FrontAccounting GraphQL module — Release 2: Panel — design
 
 Date: 2026-09-25
-Status: approved design, pre-implementation.
+Status: approved design, pre-implementation. Revised 2026-09-26 after Checkpoint B
+(Tasks 3–6): each change is marked *(revised)* with its reason.
 
 Builds on Release 1, `docs/superpowers/specs/2026-09-21-foundation-design.md`
 ("the Foundation spec"). Everything it establishes holds unless this document says
@@ -91,6 +92,21 @@ The services need a logged-in `current_user` (for `user_pos()`, the audit trail 
 references): the session gate provides it, so writes require a token, never
 anonymous.
 
+*(revised)* Two helpers were added in Task 5 that this section did not foresee.
+`Bootstrap::includeFa($path)` includes one more FrontAccounting file after boot, as
+though from file scope: the write functions (`sales_db.inc`, `crm_contacts_db.inc`,
+...) are included only by a request that writes. `FaModelType` gains
+`intId()`/`intIds()` — a client ID for an integer key must be a canonical positive
+whole number, since MySQL casts `"5 anything"` to 5 — and `rowsById()`, which reads
+a write's rows back through `resolveList` so `scope()` applies. The integer check is
+shared as `IntKey::parse()`: every integer-keyed reference a service receives
+(`customerId`, `salesTypeId`, `salesmanId`, ...) passes it before its existence
+check, so `"1 x"` is `BAD_INPUT` naming the field, not an `INTERNAL` strict-mode
+error (Checkpoint B review M-1). `rowsById()` is authorised by the write's own verb
+— create, edit or delete — never the list area: a write's read-back of its own rows
+is authorised by the write's area (the ledger's ruling; review M-3), so a role that
+may write sales orders but not list them is not refused after its order committed.
+
 ### 2.2 Writes fail closed
 
 `FaModelType` implements `resolveCreate`, `resolveUpdate`, `resolveDelete` (and
@@ -119,7 +135,11 @@ request still issues `BEGIN`. FrontAccounting's own functions nest inside it
 outermost level issues `BEGIN`/`COMMIT`).
 
 A batch (`customerCreate(input: [...])`) is one `FaTransaction`: any refusal rolls
-back every item, and the error names the index.
+back every item, and the error names the index. *(revised)* "Any refusal" is every
+`BAD_INPUT`, `FA_REJECTED` and `NOT_FOUND` an item raises — the services' own guards
+and missing rows as well as FrontAccounting's messages (Checkpoint B review I-1: the
+guards' refusals carried no index). A delete's read of its rows before it deletes
+names the index of a missing id the same way.
 
 ### 3.2 Messages, errors and warnings
 
@@ -162,7 +182,10 @@ Per entity, from `anorm-graphql` with `--mutations create-update` (§6.1):
 - `<Entity>UpdateInput`: the key non-null, every other field optional; an omitted
   field is left unchanged, an explicit `null` is a value.
 - Field names and types come from the models (Foundation spec §4.4: camelCase
-  domain names; a foreign key ends in `Id` so it is an `ID`). **Every model's key
+  domain names; a foreign key ends in `Id` so it is an `ID`). *(revised)* The
+  converse holds too: a column that is not a reference does not end in `Id`, or the
+  generator types it `ID` — the customer's tax registration number (`tax_id`) is
+  `taxNumber: String` (Checkpoint B review M-2). **Every model's key
   property is `id`**, mapped to its key column (`debtor_no`, `branch_code`,
   `order_no`, `stock_id`, ...), so every entity is addressed the same way; the
   tables below name the column. Dates are the `Date`
@@ -206,9 +229,15 @@ so a client can filter sellable items (`mbFlag != 'F'`, not inactive, not
   `creditStatusId` are required, because `get_customer_to_order` inner-joins them.
   The once-only `CustomerCreateInput` adds:
   - `branch: BranchDefaultsInput` (`salesmanId`, `salesAreaId`, `taxGroupId`,
-    `locationCode`, `shipperId`) — required when `auto_create_branch` is on, then a
+    `locationId`, `shipperId`) — required when `auto_create_branch` is on, then a
     branch is created as the page does (name, ref and address from the customer; GL
-    accounts from company preferences);
+    accounts from company preferences). *(revised)* `locationId`, not
+    `locationCode`, and the customer's currency is `currencyId`, not `currency`:
+    the generated names win, since the Foundation spec §4.4 convention names every
+    reference `…Id` and `BranchDefaultsInput` reuses the Branch model's names.
+    When `auto_create_branch` is off, `branch` and `contact` are refused: the
+    customer is written alone, and branches and contacts are added with
+    `branchCreate`/`contactCreate`;
   - `contact: ContactDetailsInput` (`phone`, `phone2`, `fax`, `email`) — the CRM
     person the page creates, linked to the customer and the branch.
   The created branch and contact are readable through `branches` and `contacts`
@@ -222,11 +251,37 @@ so a client can filter sellable items (`mbFlag != 'F'`, not inactive, not
   `name` and `ref` non-empty; salesman, area, tax group, location and shipper
   required on create; GL accounts from company preferences; an optional `contact`
   creates the branch's CRM person; delete refused while the branch has
-  transactions or orders.
+  transactions or orders. *(revised)* Every new branch gets its CRM person, as the
+  page makes one. The page names a customer's first branch's person "Main Branch"
+  and leaves a later branch's blank; a blank-named person is no use to a client, so
+  a later branch's person, when `contact.name` is not given, is named after the
+  branch.
 - **`contactCreate` / `contactUpdate` / `contactDelete`**: CRM persons. The
   once-only Inputs add `links: [ContactLinkInput!]` (`entity: CUSTOMER | BRANCH`,
   `id`, `category: GENERAL | ORDER | DELIVERY | INVOICE`); on update, `links`
   replaces the set when given. `ContactType` gets a computed `links` field.
+  *(revised)* **A `Contact` is a customer's or a branch's contact**: a CRM person
+  with at least one `crm_contacts` link of type `customer` or `cust_branch` in one
+  of the four system categories — the links this API models. FrontAccounting's
+  CRM persons are shared with suppliers (and custom categories), whose pages guard
+  them with `SA_SUPPLIER`; `SA_CUSTOMER` must not reach them (Checkpoint B review
+  C-1, reproduced with the demo's supplier contacts). So, as FrontAccounting's own
+  CRM editor (`includes/ui/contacts_view.inc`) confines itself to its class:
+  - `contactList`, `CustomerType.contacts` and every read-back list only persons
+    with such a link;
+  - `contactUpdate` and `contactDelete` of a person without one are `NOT_FOUND`;
+  - `links` on update replaces only the customer and branch links in the modelled
+    categories; a supplier's link, or a custom category's, is kept;
+  - `contactDelete` removes the person's customer and branch links, then deletes
+    the person only when no link at all is left (the editor's `db_delete()`); a
+    person who is still, say, a supplier's contact is kept, with that link. The
+    returned rows are read before the delete; their computed `links`, resolved
+    after it, are empty.
+  `links` shows only the modelled links, and a create or update may give only the
+  four categories. The person's own fields (name, phone, ...) are shared: an update
+  changes them for every link, as the editor does. The review's M-5 is kept in
+  passing: the person is read with its own `SELECT`, not `get_crm_person()`, which
+  auto-vivifies `false` into an array (deprecated in PHP 8.1).
 
 ### 4.4 Sales orders
 
@@ -296,8 +351,8 @@ same either way.
 | Code | When |
 |---|---|
 | `BAD_INPUT` | A field fails this module's validation; `extensions.field` names it, and `extensions.index` the batch item |
-| `NOT_FOUND` | An update or delete names a row that does not exist (in the order's scope, for orders) |
-| `FA_REJECTED` | FrontAccounting refused (its messages in `extensions.messages`), a stale order version, a guard (customer with orders), `sgw_sales`' table not upgraded |
+| `NOT_FOUND` | An update or delete names a row that does not exist (in the order's scope, for orders; in the Contact scope, §4.3, for contacts); `extensions.index` the batch item *(revised)* |
+| `FA_REJECTED` | FrontAccounting refused (its messages in `extensions.messages`), a stale order version, a guard (customer with orders), `sgw_sales`' table not upgraded; `extensions.index` the batch item. *(revised)* A guard of this module's own carries its message in `extensions.messages` too, so a client reads `messages` the same way for every refusal (Checkpoint B review M-4) |
 | `FORBIDDEN` | `Guard` refused; or a write reached a Type with no declared write path (§2.2) |
 
 `extensions.warnings` (top level) carries FrontAccounting's warnings when the

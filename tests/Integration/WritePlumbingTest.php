@@ -4,8 +4,10 @@ namespace FA\GraphQL\Tests\Integration;
 
 use FA\GraphQL\Auth\Claims;
 use FA\GraphQL\Config;
+use FA\GraphQL\Error\ApiError;
 use FA\GraphQL\Error\BadInput;
 use FA\GraphQL\Error\FaRejected;
+use FA\GraphQL\Error\NotFound;
 use FA\GraphQL\Fa\CompanyContext;
 use FA\GraphQL\Fa\DateConversion;
 use FA\GraphQL\Fa\FaErrorException;
@@ -255,6 +257,44 @@ class WritePlumbingTest extends FaTestCase
             $this->fail('expected FaRejected');
         } catch (FaRejected $e) {
             $this->assertSame(2, $e->getExtensions()['index']);
+        }
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public function ownRefusals(): array
+    {
+        return ['a guard' => ['FA_REJECTED'], 'a missing row' => ['NOT_FOUND']];
+    }
+
+    /**
+     * Spec section 3.1: any refusal in a batch names the item's index — the services'
+     * own guards and NOT_FOUND too, not only FrontAccounting's messages.
+     *
+     * @dataProvider ownRefusals
+     */
+    public function testEachTagsOurOwnRefusalsWithTheirIndexAndRollsBackTheBatch(string $code): void
+    {
+        $this->enter();
+        $hashes = [$this->hash('a'), $this->hash('b')];
+
+        try {
+            ServiceCall::each($hashes, function (string $hash, int $index) use ($code) {
+                $this->insert($hash);
+                if ($index === 1) {
+                    throw $code === 'NOT_FOUND'
+                        ? new NotFound("Customer id '999999' not found")
+                        : new FaRejected('Guarded.');
+                }
+            });
+            $this->fail("expected $code");
+        } catch (ApiError $e) {
+            $this->assertSame($code, $e->code());
+            $this->assertSame(1, $e->getExtensions()['index'] ?? null, json_encode($e->getExtensions()));
+        }
+        foreach ($hashes as $hash) {
+            $this->assertSame(0, $this->committed($hash));
         }
     }
 

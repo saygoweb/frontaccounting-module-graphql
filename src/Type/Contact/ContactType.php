@@ -7,6 +7,7 @@ use DI\Container;
 use FA\GraphQL\Fa\Service\ContactService;
 use FA\GraphQL\Fa\Service\ServiceCall;
 use FA\GraphQL\Type\Contact\Base\ContactTypeBase;
+use GraphQL\Error\UserError;
 use GraphQL\Type\Definition\Type;
 
 /**
@@ -14,6 +15,11 @@ use GraphQL\Type\Definition\Type;
  *
  * Contacts are written through FrontAccounting (spec §2), and `links` says what a
  * contact is for: which customers and branches, in which categories.
+ *
+ * A Contact is a CRM person with at least one customer or branch link (spec §4.3):
+ * this Type, guarded by SA_CUSTOMER, never lists, updates or deletes a person who is
+ * only, say, a supplier's contact. A delete removes the person's customer and branch
+ * links, and the person only when no other link is left (ContactService::delete()).
  */
 class ContactType extends ContactTypeBase
 {
@@ -50,6 +56,35 @@ class ContactType extends ContactTypeBase
         ];
     }
 
+    /**
+     * The generated list, narrowed to the Contact scope. ModelType::scope() takes
+     * equalities only, so the scope is ANDed into the selector as an `$in` of the
+     * persons in scope. The client's selector is embedded as the JSON it sent, after
+     * the same object check ModelType makes, so ModelType still checks every field
+     * name it holds.
+     */
+    public function resolveList($root, $args, Container $context): array
+    {
+        $this->authorize(self::VERB_LIST, null, $context);
+        $inScope = ContactLinks::personIdsInScope($context->get(\PDO::class));
+        if ($inScope === []) {
+            return [];
+        }
+        $query = isset($args['query']) && is_array($args['query']) ? $args['query'] : [];
+        $scope = json_encode(['id' => ['$in' => $inScope]]);
+        $selector = $query['selector'] ?? null;
+        if ($selector === null || $selector === '') {
+            $query['selector'] = $scope;
+        } elseif (!json_decode($selector) instanceof \stdClass) {
+            throw new UserError("Argument 'query.selector' is not a valid JSON object");
+        } else {
+            $query['selector'] = '{"$and":[' . $selector . ',' . $scope . ']}';
+        }
+        $args['query'] = $query;
+
+        return parent::resolveList($root, $args, $context);
+    }
+
     public function resolveCreate($root, $args, Container $context): array
     {
         $this->authorize(self::VERB_CREATE, null, $context);
@@ -58,7 +93,7 @@ class ContactType extends ContactTypeBase
             return $contacts->create($input);
         });
 
-        return $this->rowsById($context, $ids);
+        return $this->rowsById($context, $ids, self::VERB_CREATE);
     }
 
     public function resolveUpdate($root, $args, Container $context): array
@@ -72,14 +107,14 @@ class ContactType extends ContactTypeBase
             return $input['id'];
         });
 
-        return $this->rowsById($context, $ids);
+        return $this->rowsById($context, $ids, self::VERB_EDIT);
     }
 
     public function resolveDelete($root, $args, Container $context): array
     {
         $this->authorize(self::VERB_DELETE, null, $context);
         $ids = self::intIds($args['id']);
-        $rows = $this->rowsById($context, $ids);
+        $rows = $this->rowsById($context, $ids, self::VERB_DELETE);
         $contacts = $context->get(ContactService::class);
         ServiceCall::each($ids, function (int $id) use ($contacts): void {
             $contacts->delete($id);

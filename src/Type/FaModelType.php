@@ -9,6 +9,7 @@ use FA\GraphQL\Auth\Guard;
 use FA\GraphQL\Error\BadInput;
 use FA\GraphQL\Error\Forbidden;
 use FA\GraphQL\Error\NotFound;
+use FA\GraphQL\Fa\Service\IntKey;
 
 /**
  * The base every generated Type extends: bin/generate passes it to anorm-graphql as
@@ -28,8 +29,18 @@ abstract class FaModelType extends ModelType
      */
     abstract protected function areas(): array;
 
+    /**
+     * Set while rowsById() reads back a write's own rows: the verb of that write.
+     */
+    private ?string $readBackVerb = null;
+
     protected function authorize(string $verb, ?Model $model, Container $context): void
     {
+        // The ledger's ruling (Checkpoint B review M-3): a write's read-back of its
+        // own rows is authorised by the write's area, not the list area.
+        if ($verb === self::VERB_LIST && $this->readBackVerb !== null) {
+            $verb = $this->readBackVerb;
+        }
         Guard::requireFor($this->areas(), $verb);
     }
 
@@ -72,13 +83,7 @@ abstract class FaModelType extends ModelType
      */
     protected static function intId($id, string $field = 'id'): int
     {
-        if (is_int($id) && $id > 0) {
-            return $id;
-        }
-        if (is_string($id) && preg_match('/^[1-9][0-9]{0,9}$/', $id) === 1 && (int) $id <= 2147483647) {
-            return (int) $id;
-        }
-        throw new BadInput("$field must be a positive whole number.", $field);
+        return IntKey::parse($id, $field);
     }
 
     /**
@@ -102,24 +107,32 @@ abstract class FaModelType extends ModelType
     }
 
     /**
-     * The rows for these keys, read back after a FrontAccounting write the way a list
-     * reads them — through resolveList, so scope() and the list verb's area apply —
-     * in the order given. FrontAccounting has committed on its own connection by
-     * then; the container's PDO, outside any transaction, sees it. A key with no row
-     * is NOT_FOUND.
+     * The rows for these keys, read the way a list reads them — through
+     * resolveList, so scope() applies — in the order given, and authorised by $verb:
+     * the write they are read for (its create or update read-back, or a delete's
+     * read before it deletes), never the list area. FrontAccounting has committed
+     * on its own connection by then; the container's PDO, outside any transaction,
+     * sees it. A key with no row is NOT_FOUND, naming its index in $ids.
      *
      * @param array<int, int|string> $ids
+     * @param string $verb ModelType::VERB_CREATE, VERB_EDIT or VERB_DELETE
      * @return array<int, array<string, mixed>>
      */
-    protected function rowsById(Container $context, array $ids): array
+    protected function rowsById(Container $context, array $ids, string $verb): array
     {
+        $entity = (string) preg_replace('/Type$/', '', (string) $this->name);
         $rows = [];
-        foreach ($ids as $id) {
-            $found = $this->resolveList(null, ['query' => ['selector' => json_encode(['id' => $id])]], $context);
-            if (count($found) !== 1) {
-                throw new NotFound($this->name . " id '" . substr((string) $id, 0, 40) . "' not found");
+        $this->readBackVerb = $verb;
+        try {
+            foreach (array_values($ids) as $index => $id) {
+                $found = $this->resolveList(null, ['query' => ['selector' => json_encode(['id' => $id])]], $context);
+                if (count($found) !== 1) {
+                    throw new NotFound("$entity id '" . substr((string) $id, 0, 40) . "' not found", $index);
+                }
+                $rows[] = $found[0];
             }
-            $rows[] = $found[0];
+        } finally {
+            $this->readBackVerb = null;
         }
 
         return $rows;

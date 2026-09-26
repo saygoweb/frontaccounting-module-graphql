@@ -84,7 +84,7 @@ class CustomerType extends CustomerTypeBase
             return $customers->create($input);
         });
 
-        return $this->rowsById($context, $ids);
+        return $this->rowsById($context, $ids, self::VERB_CREATE);
     }
 
     public function resolveUpdate($root, $args, Container $context): array
@@ -98,14 +98,14 @@ class CustomerType extends CustomerTypeBase
             return $input['id'];
         });
 
-        return $this->rowsById($context, $ids);
+        return $this->rowsById($context, $ids, self::VERB_EDIT);
     }
 
     public function resolveDelete($root, $args, Container $context): array
     {
         $this->authorize(self::VERB_DELETE, null, $context);
         $ids = self::intIds($args['id']);
-        $rows = $this->rowsById($context, $ids);
+        $rows = $this->rowsById($context, $ids, self::VERB_DELETE);
         $customers = $context->get(CustomerService::class);
         ServiceCall::each($ids, function (int $id) use ($customers): void {
             $customers->delete($id);

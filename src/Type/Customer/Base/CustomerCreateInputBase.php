@@ -24,7 +24,7 @@ abstract class CustomerCreateInputBase extends InputObjectType
             FieldBuilder::create('name', Type::nonNull(Type::string()))->build(),
             FieldBuilder::create('ref', Type::nonNull(Type::string()))->build(),
             FieldBuilder::create('address', Type::string())->build(),
-            FieldBuilder::create('taxId', Type::id())->build(),
+            FieldBuilder::create('taxNumber', Type::string())->build(),
             FieldBuilder::create('currencyId', Type::id())->build(),
             FieldBuilder::create('salesTypeId', Type::nonNull(Type::id()))->build(),
             FieldBuilder::create('creditStatusId', Type::nonNull(Type::id()))->build(),

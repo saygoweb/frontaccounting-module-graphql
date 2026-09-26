@@ -30,7 +30,7 @@ abstract class CustomerTypeBase extends \FA\GraphQL\Type\FaModelType
             FieldBuilder::create('name', Type::string())->build(),
             FieldBuilder::create('ref', Type::string())->build(),
             FieldBuilder::create('address', Type::string())->build(),
-            FieldBuilder::create('taxId', Type::id())->build(),
+            FieldBuilder::create('taxNumber', Type::string())->build(),
             FieldBuilder::create('currencyId', Type::id())->build(),
             FieldBuilder::create('salesTypeId', Type::id())->build(),
             FieldBuilder::create('creditStatusId', Type::id())->build(),

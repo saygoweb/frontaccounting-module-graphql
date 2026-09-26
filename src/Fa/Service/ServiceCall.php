@@ -4,6 +4,7 @@ namespace FA\GraphQL\Fa\Service;
 
 use FA\GraphQL\Error\BadInput;
 use FA\GraphQL\Error\FaRejected;
+use FA\GraphQL\Error\NotFound;
 use FA\GraphQL\Fa\FaErrorException;
 use FA\GraphQL\Fa\FaMessages;
 use FA\GraphQL\Fa\FaTransaction;
@@ -54,7 +55,9 @@ final class ServiceCall
             foreach (array_values($inputs) as $index => $input) {
                 try {
                     $results[] = $work($input, $index);
-                } catch (BadInput $e) {
+                } catch (BadInput | FaRejected | NotFound $e) {
+                    // The services' own refusals and guards, not only FrontAccounting's
+                    // messages, name the item (spec section 3.1).
                     throw $e->index() === null ? $e->withIndex($index) : $e;
                 } catch (FaErrorException $e) {
                     throw self::rejected($e, $index);

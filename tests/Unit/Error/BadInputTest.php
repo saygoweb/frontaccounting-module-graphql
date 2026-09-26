@@ -37,7 +37,8 @@ class BadInputTest extends TestCase
             (new FaRejected('Credit limit exceeded', ['Credit limit exceeded'], 0))->getExtensions()
         );
         $this->assertSame(
-            ['code' => 'FA_REJECTED', 'messages' => []],
+            // Checkpoint B review M-4: never an empty messages list.
+            ['code' => 'FA_REJECTED', 'messages' => ['Refused']],
             (new FaRejected('Refused'))->getExtensions()
         );
     }

@@ -180,6 +180,22 @@ class BranchServiceTest extends FaTestCase
             'unknown location' => [['locationId' => 'NOPE'], 'locationId', "There is no location 'NOPE'."],
             'unknown shipper' => [['shipperId' => '999'], 'shipperId', "There is no shipper '999'."],
             'null address' => [['address' => null], 'address', 'address cannot be null.'],
+            // Integer references are whole numbers: MySQL would cast '1 x' to 1.
+            'customer not a number' => [
+                ['customerId' => '1 x'], 'customerId', 'customerId must be a positive whole number.',
+            ],
+            'salesperson not a number' => [
+                ['salesmanId' => '1 x'], 'salesmanId', 'salesmanId must be a positive whole number.',
+            ],
+            'area not a number' => [
+                ['salesAreaId' => '01'], 'salesAreaId', 'salesAreaId must be a positive whole number.',
+            ],
+            'tax group not a number' => [
+                ['taxGroupId' => '1e0'], 'taxGroupId', 'taxGroupId must be a positive whole number.',
+            ],
+            'shipper not a number' => [
+                ['shipperId' => '1 '], 'shipperId', 'shipperId must be a positive whole number.',
+            ],
         ];
     }
 
