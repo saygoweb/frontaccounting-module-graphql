@@ -22,6 +22,9 @@ use FA\GraphQL\Type\Customer\CustomerUpdateInput;
 use FA\GraphQL\Type\DeliveryLine\DeliveryLineType;
 use FA\GraphQL\Type\Delivery\DeliveryCreateInput;
 use FA\GraphQL\Type\Delivery\DeliveryType;
+use FA\GraphQL\Type\InvoiceLine\InvoiceLineType;
+use FA\GraphQL\Type\Invoice\InvoiceCreateInput;
+use FA\GraphQL\Type\Invoice\InvoiceType;
 use FA\GraphQL\Type\Location\LocationType;
 use FA\GraphQL\Type\PaymentTerms\PaymentTermsType;
 use FA\GraphQL\Type\SalesArea\SalesAreaType;
@@ -107,6 +110,14 @@ class ApiSchema extends Schema
                         ->build(),
                     // anorm-graphql
                     GraphQLUtils::createListField('deliveryList', $this->type(DeliveryType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('invoiceLineList', $this->type(InvoiceLineType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('invoiceList', $this->type(InvoiceType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
                     // anorm-graphql
@@ -232,6 +243,17 @@ class ApiSchema extends Schema
                         ->build(),
                     // anorm-graphql
                     GraphQLUtils::createListField('deliveryDelete', $this->type(DeliveryType::class), 'resolveDelete')
+                        ->addArgument('id', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('invoiceCreate', $this->type(InvoiceType::class), 'resolveCreate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(InvoiceCreateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('invoiceDelete', $this->type(InvoiceType::class), 'resolveDelete')
                         ->addArgument('id', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
                         ->build(),
                     'login' => [

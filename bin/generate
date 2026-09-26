@@ -20,7 +20,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # Entities generated without mutations, comma-separated.
-READONLY="SalesType,PaymentTerms,TaxGroup,SalesArea,Salesman,Location,Shipper,CreditStatus,Currency,StockItem,SalesOrderLine,BankAccount,DeliveryLine"
+READONLY="SalesType,PaymentTerms,TaxGroup,SalesArea,Salesman,Location,Shipper,CreditStatus,Currency,StockItem,SalesOrderLine,BankAccount,DeliveryLine,InvoiceLine"
 # Entities that get only their Input(s), to nest in another entity's input: no
 # Type mutations and no ApiSchema entries of their own. Comma-separated.
 INPUT_ONLY="SalesOrderLine,DeliveryLine"
@@ -28,7 +28,7 @@ INPUT_ONLY="SalesOrderLine,DeliveryLine"
 # input (anorm-graphql 0.3): FrontAccounting does not edit a posted document through
 # the API (Release 3 spec §2, ruling 4). Comma-separated; naming an entity that does
 # not exist is an error, so each is passed only when non-empty.
-WITHOUT_UPDATE="Delivery"
+WITHOUT_UPDATE="Delivery,Invoice"
 WITHOUT_DELETE=""
 
 if [ -n "${ANORM_GRAPHQL_CHECKOUT:-}" ]; then

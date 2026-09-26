@@ -136,6 +136,41 @@ invoiced quantities.
 `InvoiceType` gets computed `lines`, `total`, `outstanding` (`total - alloc`),
 `deliveryIds`, `orderId`, `voided`.
 
+*(revised)* As built (Release 3 Task 4):
+
+- **The one-step path delivers with reference `'auto'`**, as FrontAccounting's own
+  direct invoice does (`sales/includes/cart_class.inc`, `write()`), through
+  `DeliveryService::create($input, autoReference: true)` — a PHP parameter; a
+  client's `reference: "auto"` is refused. An `'auto'` reference is never saved to
+  `refs` (`includes/references.inc` :358-361). So `invoiceDelete` of a one-step
+  invoice voids its delivery too (`void_sales_invoice()`,
+  `sales_invoice_db.inc` :249-256: one parent delivery whose reference is `auto`),
+  and the order is back as it was.
+- **Default freight is the deliveries' `ov_freight` summed**, the intent of the
+  page's `set_delivery_shipping_sum()` (`customer_invoice.php` :230-241);
+  `read_sales_trans()` alone would take the first delivery's. A given `freight`
+  (not negative) wins on the deliveries path; on the one-step path it is the
+  delivery's freight, and so the invoice's.
+- **Per-line quantities are a hand-written input**,
+  `lines: [InvoiceLineQuantityInput!]` with `InvoiceLineQuantityInput {
+  deliveryLineId: ID!, quantity: Float! }`: no generated Input fits "which
+  delivery line, how much" (Release 2 spec §1 allows a hand-written shape where
+  generation cannot express one). Lines not named are invoiced in full. `lines` is
+  refused on the one-step path, which invoices everything remaining.
+- **"Same currency" is covered by "same customer"**: FrontAccounting ties a currency
+  to the customer account (`debtors_master.curr_code`), so the check is same
+  customer and branch.
+- **Prepaid orders are refused** (prepayment invoices are a non-goal, §1), and so
+  are cash-sale terms (ruling 6) and prepayment terms (`days_before_due = -1`),
+  whether the terms come from the delivery or are given as `paymentTermsId`.
+- The inputs also carry `shipperId` and `freight`; `customerId`, `branchId`, the
+  price list, amounts, rate and `taxIncluded` come from the deliveries. There is
+  **no `invoiceUpdate`** (generated `--without-update`): a posted invoice is voided
+  and entered again. Computed fields as built: `lines`, `total` (FrontAccounting's
+  Total: items + tax + freight + freight tax + discount), `outstanding`,
+  `deliveryIds` (the deliveries its lines' `src_id` point at), `voided`; `orderId`
+  is a stored column (`order_`), not computed.
+
 ## 5. Payments and allocations
 
 `CustomerPayment` (`debtor_trans` type 12). Areas: list `SA_SALESTRANSVIEW`, create

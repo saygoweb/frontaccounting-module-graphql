@@ -61,9 +61,9 @@ class ApiSchemaTest extends TestCase
         sort($query);
         $expected = [
             'apiVersion', 'bankAccountList', 'branchList', 'contactList', 'creditStatusList', 'currencyList',
-            'customerList', 'deliveryLineList', 'deliveryList', 'locationList', 'me', 'paymentTermsList',
-            'salesAreaList', 'salesOrderLineList', 'salesOrderList', 'salesTypeList', 'salesmanList', 'shipperList',
-            'stockItemList', 'taxGroupList',
+            'customerList', 'deliveryLineList', 'deliveryList', 'invoiceLineList', 'invoiceList', 'locationList',
+            'me', 'paymentTermsList', 'salesAreaList', 'salesOrderLineList', 'salesOrderList', 'salesTypeList',
+            'salesmanList', 'shipperList', 'stockItemList', 'taxGroupList',
         ];
         sort($expected);
 
@@ -71,8 +71,9 @@ class ApiSchemaTest extends TestCase
         $this->assertSame(
             [
                 'branchCreate', 'branchDelete', 'branchUpdate', 'contactCreate', 'contactDelete', 'contactUpdate',
-                'customerCreate', 'customerDelete', 'customerUpdate', 'deliveryCreate', 'deliveryDelete', 'login',
-                'salesOrderCreate', 'salesOrderDelete', 'salesOrderUpdate', 'tokenRefresh', 'tokenRevoke',
+                'customerCreate', 'customerDelete', 'customerUpdate', 'deliveryCreate', 'deliveryDelete',
+                'invoiceCreate', 'invoiceDelete', 'login', 'salesOrderCreate', 'salesOrderDelete', 'salesOrderUpdate',
+                'tokenRefresh', 'tokenRevoke',
             ],
             array_keys($schema->getMutationType()->getFields())
         );
