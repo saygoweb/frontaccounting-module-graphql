@@ -93,3 +93,31 @@ WHERE `role` = 'GraphQL API' AND FIND_IN_SET('769', REPLACE(`areas`, ';', ',')) 
 -- company has none; set only when empty, so a real value is never overwritten.
 UPDATE `0_sys_prefs` SET `value` = 'accounts@example.com'
 WHERE `name` = 'email' AND (`value` IS NULL OR `value` = '');
+
+-- The hosting panel's machine identity (Foundation spec §3.7, machine tokens): the
+-- smallest areas that cover what the panel uses — customerList (with balance),
+-- salesOrderList, salesOrderCreate/Update, invoiceList, customerPaymentList — plus
+-- GraphQL access. Section SS_SALES = 3072 with SA_SALESTRANSVIEW 3073, SA_CUSTOMER
+-- 3074 and SA_SALESORDER 3075. Those areas also permit more than the panel happens
+-- to use: SA_CUSTOMER covers customer/branch/contact create, update and delete too,
+-- and SA_SALESORDER covers order delete too. Read-only customer access would need
+-- a separate role area, in a later release. 91136 / 91236 = SS_GRAPHQL / SA_GRAPHQL
+-- for extension 1.
+INSERT INTO `0_security_roles` (`role`, `description`, `sections`, `areas`, `inactive`)
+SELECT 'GraphQL Panel', 'GraphQL for the hosting panel',
+       '3072;91136', '3073;3074;3075;91236', 0
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `0_security_roles` r WHERE r.`role` = 'GraphQL Panel');
+
+-- It signs in only with a machine token (bin/fa-token), never with a password: the
+-- hash is a random string that no md5() can equal ('!' is not a hex digit), made
+-- afresh when the row is first inserted. Its email is unroutable
+-- (sgwpanel@invalid.invalid, RFC 2606/6761): a password reset — off in this stack,
+-- but a production install should not rely on that alone — could not mail a usable
+-- password to any real address.
+INSERT INTO `0_users` (`user_id`, `password`, `real_name`, `role_id`, `email`, `language`)
+SELECT 'sgwpanel', CONCAT('!unusable-', SHA2(CONCAT(UUID(), RAND()), 256)), 'SGW Panel', r.`id`,
+       'sgwpanel@invalid.invalid', 'C'
+FROM `0_security_roles` r
+WHERE r.`role` = 'GraphQL Panel'
+  AND NOT EXISTS (SELECT 1 FROM `0_users` u WHERE u.`user_id` = 'sgwpanel');

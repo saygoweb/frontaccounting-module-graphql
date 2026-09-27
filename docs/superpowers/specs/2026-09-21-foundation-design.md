@@ -7,7 +7,9 @@ in the container and news from the sgw_sales session; each revision is marked
 *(revised: Slim 4)*, and `saygoweb/anorm-graphql` is used from this release on,
 marked *(revised: anorm-graphql)*. Foundation 1.1 (2026-09-25): the module runs on
 upstream FrontAccounting `master`, the fork is optional, and the whole request's
-output is captured; marked *(revised: upstream FA)*.
+output is captured; marked *(revised: upstream FA)*. Machine tokens (2026-09-26):
+long-lived, revocable bearer tokens issued by `bin/fa-token`, section 3.7; marked
+*(revised: machine tokens)*.
 
 ## 1. Purpose
 
@@ -482,6 +484,7 @@ array:
 | `max_complexity` | `2000` | query complexity limit |
 | `max_body_bytes` | `1048576` | request body limit |
 | `fa_root` | `../..` | FrontAccounting's root |
+| `machine_ttl_max` | `31536000` | seconds; the longest a machine token may live (section 3.7) *(revised: machine tokens)* |
 
 A missing file, a missing secret or a short secret makes every request fail closed
 with HTTP 500 and a JSON error naming the problem. There is no default secret. A file
@@ -517,6 +520,100 @@ Checkpoint D found this reachable without it: a request carrying a company-0 bea
 token and the fields `tokenRevoke` then `tokenRefresh("1.<company-0 secret>")` was
 issued a company-1 token when the two companies' databases shared a prefix.
 `OneCompanyPerRequestTest` reproduces that shape and the `login` variants.
+
+### 3.7 Machine tokens *(revised: machine tokens)*
+
+A service calling the API unattended (the hosting panel) holds a **machine token**
+rather than a password: long-lived, revocable, issued offline.
+
+**Issuing.** Only `bin/fa-token`, on the server, run as the web server's user (for
+example `sudo -u www-data`) — not root, or FrontAccounting may create root-owned
+files under `tmp/` that the web server can no longer write. Command line only: it
+answers any other SAPI with a bare 404 before doing anything, and `.htaccess` and
+the vhost deny `bin/`.
+
+```
+bin/fa-token issue  --company N --user LOGIN --days D --label TEXT
+bin/fa-token list   --company N
+bin/fa-token revoke --company N <jti>
+```
+
+It builds the module's own container and works through it: `FaSession` opens the
+company, `UserModel` finds the user, `FaSession::enter()` logs it in exactly as a
+verified bearer token would, and `MachineTokenService` issues and writes. `issue`
+refuses a lifetime over `machine_ttl_max`, an unknown or inactive user, and a user
+without `SA_GRAPHQL`, and prints the JWT once, alone on stdout. Exit codes: 0 done,
+1 refused, 2 usage.
+
+**The token** is an access token (section 3.3) — same HS256 secret, same claims
+`iss`, `sub`, `coy`, `jti`, `iat`, `nbf`, `exp` — plus `typ: "machine"`, with `exp`
+at most `machine_ttl_max` (default 31536000, a year) after `iat`, in whole seconds.
+`TokenService::verify()` accepts no `typ` (an access token) or `"machine"`; any other
+`typ`, or a machine token without a `jti`, is `InvalidToken`.
+
+**The table**, per company under its prefix, from `sql/update_1.1.sql`, applied by
+`activate_extension()` (which now lists `update_1.0.sql` and `update_1.1.sql`) and
+by the stack's `db load` / `up`:
+
+```sql
+CREATE TABLE IF NOT EXISTS `0_graphql_machine_token` (
+  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `jti` char(32) NOT NULL,
+  `login` varchar(60) NOT NULL,
+  `label` varchar(255) NOT NULL DEFAULT '',
+  `issued_at` datetime NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `revoked_at` datetime DEFAULT NULL,
+  `last_used_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `jti` (`jti`),
+  KEY `login` (`login`)
+) ENGINE=InnoDB;
+```
+
+The token itself is never stored; its `jti` identifies it. Datetimes are UTC
+strings, as in section 3.4. Read and written through Anorm
+(`Auth/Model/MachineTokenModel`, internal, no GraphQL Type) by
+`AnormMachineTokenRepository`; revoke and touch are single conditional `UPDATE`s.
+
+**Every request carrying one.** `Authenticator` verifies the JWT as usual. When
+`typ` is `machine` it asks its `MachineTokenCheck` (`Fa\CompanyMachineTokenCheck`):
+open the company named by the verified `coy` claim — the same company
+`FaSession::enter()` opens next, so section 3.6 holds — then look the `jti` up. Not
+found, stored for another login, revoked, or `expires_at` passed: `InvalidToken`,
+HTTP 401, before GraphQL runs. A company that does not exist is the same 401.
+`last_used_at` is written at most once a minute: read first, and the `UPDATE`
+repeats the condition (`last_used_at IS NULL OR last_used_at <= now - 60 s`), so a
+token in steady use costs one `SELECT` per request. Access tokens (no `typ`) are
+unchanged: no lookup, no database.
+
+**Identity.** The request then enters the session as the token's user (section
+2.2): an inactive user is refused (401), a role without `SA_GRAPHQL` is 403, the
+role's areas limit every resolver, and FrontAccounting's audit trail records the
+user. Deactivating the user is therefore a second way to stop its tokens.
+
+**Refresh.** `tokenRefresh` never accepts a machine token (it is not
+`<coy>.<secret>`, so it is "The refresh token is not valid."), and neither `login`
+nor `tokenRefresh` ever issues one. A machine token presented as the bearer of
+`tokenRevoke` is an ordinary bearer: it revokes that user's refresh tokens, not
+itself — only `bin/fa-token revoke` does that.
+
+**Operations.** HTTPS is required in production, as for passwords. Rotate by issuing
+a new token, moving the service to it, then revoking the old one. A company
+activated before this change has no `graphql_machine_token` table: `issue`, `list`
+and `revoke` then refuse with the fix — re-activate the GraphQL extension for it
+(Setup → Install/Activate Extensions) or apply `sql/update_1.1.sql` directly —
+rather than let a raw `PDOException` reach the operator. The dev seed adds role
+"GraphQL Panel" (section 3072 with areas 3073 `SA_SALESTRANSVIEW`, 3074
+`SA_CUSTOMER`, 3075 `SA_SALESORDER`; `SS_GRAPHQL`/`SA_GRAPHQL` 91136/91236): the
+smallest areas that cover what the dev panel uses, though `SA_CUSTOMER` also permits
+creating, updating and deleting customers, branches and contacts, and
+`SA_SALESORDER` also permits deleting orders — read-only customer access would need
+a separate role area, in a later release. Its user `sgwpanel` has a password hash
+that is a random non-hex string no `md5()` equals, so it can never `login`, and an
+email nobody can receive (`sgwpanel@invalid.invalid`, RFC 2606/6761): a service user
+should have one too, or FrontAccounting's password reset should stay off. A
+production role for a service should likewise hold only what that service uses.
 
 ## 4. Container and database
 
@@ -781,6 +878,8 @@ config_graphql.example.php
 bin/generate                  anorm-graphql make with the module's options; runs on the host
 hooks.php                     hooks_graphql: install_access, activate_extension, authenticate
 sql/update_1.0.sql
+sql/update_1.1.sql            graphql_machine_token (section 3.7) *(revised: machine tokens)*
+bin/fa-token                  issue, list, revoke machine tokens; CLI only (section 3.7)
 src/
   ApiSchema.php               scaffolded by anorm-graphql make; VERSION (apiVersion)
   Config.php  ConfigException.php

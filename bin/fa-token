@@ -1,0 +1,62 @@
+#!/usr/bin/env php
+<?php
+
+/*
+ * Machine tokens (Foundation spec §3.7): long-lived, revocable bearer tokens for a
+ * service such as a hosting panel, issued here and nowhere else.
+ *
+ *   bin/fa-token issue  --company N --user LOGIN --days D --label TEXT
+ *   bin/fa-token list   --company N
+ *   bin/fa-token revoke --company N <jti>
+ *
+ * In the docker stack: docker/fa-graphql exec bin/fa-token ...
+ *
+ * `issue` prints the token once, alone, on stdout; everything else goes to stderr.
+ * Command line only: a web SAPI gets a bare 404, and .htaccess and the vhost deny
+ * bin/ anyway. Run it as the web server's user (for example `sudo -u www-data`),
+ * not root — otherwise FrontAccounting may create root-owned files under `tmp/`
+ * that the web server can no longer write. The work is FA\GraphQL\Cli\TokenCommand's.
+ */
+
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit(1);
+}
+
+$faTokenModule = dirname(__DIR__);
+require $faTokenModule . '/vendor/autoload.php';
+
+// FrontAccounting may print while it loads or logs a user in: none of that reaches
+// the terminal. TokenCommand writes to STDOUT/STDERR directly, past this buffer.
+ob_start();
+
+$faTokenCommand = new \FA\GraphQL\Cli\TokenCommand(
+    function () use ($faTokenModule): \Psr\Container\ContainerInterface {
+        // A relative fa_root is relative to the module, as it is for index.php.
+        chdir($faTokenModule);
+        $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $config = \FA\GraphQL\Config::fromFile($faTokenModule . '/config_graphql.php');
+
+        return (require $faTokenModule . '/container.php')(
+            $config,
+            new \FA\GraphQL\RequestInfo(false, 'bin/fa-token')
+        );
+    },
+    STDOUT,
+    STDERR
+);
+
+try {
+    $faTokenExit = $faTokenCommand->run(array_slice($argv, 1));
+} catch (\FA\GraphQL\ConfigException $e) {
+    fwrite(STDERR, 'fa-token: the module is not configured: ' . $e->getMessage() . "\n");
+    $faTokenExit = 1;
+} catch (\Throwable $e) {
+    fwrite(STDERR, 'fa-token: ' . get_class($e) . ': ' . $e->getMessage() . "\n");
+    $faTokenExit = 1;
+}
+
+while (ob_get_level() > 0) {
+    ob_end_clean();
+}
+exit($faTokenExit);

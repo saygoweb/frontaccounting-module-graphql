@@ -55,6 +55,57 @@ $pair = $body['data']['login'];
 - The module answers `POST` at its directory (or `…/index.php`). Anything else is
   JSON too: 405 for another method, 404 for another path.
 
+### Machine tokens
+
+A service that calls the API unattended — a hosting panel, a cron job — should not
+hold a FrontAccounting password. Give it a **machine token** instead: a bearer token
+for one FrontAccounting user in one company, living up to a year
+(`machine_ttl_max`, default 31536000 seconds), and revocable at any time. It is sent
+exactly like an access token (`Authorization: Bearer …`); there is nothing to
+refresh. Machine tokens are issued only from the command line on the server, never
+by the API, and run as the web server's user outside the dev stack (for example
+`sudo -u www-data`) — not root, or FrontAccounting may create root-owned files
+under `tmp/` that the web server can no longer write:
+
+    # in the docker stack, prefix each with: docker/fa-graphql exec
+    bin/fa-token issue  --company 0 --user sgwpanel --days 365 --label "my.saygoweb.com"
+    bin/fa-token list   --company 0
+    bin/fa-token revoke --company 0 <jti>
+
+- `issue` prints the token **once**, alone on stdout (its jti and expiry go to
+  stderr). Only its id (`jti`) is stored, in the company's `graphql_machine_token`
+  table, so a lost token cannot be shown again: issue another. It refuses a lifetime
+  over `machine_ttl_max`, an unknown or inactive user, and a user whose role lacks
+  GraphQL API access.
+- `list` shows every token of the company: jti, user, live/revoked/expired, issue
+  and expiry times, when it was last used (to the minute), and its label.
+- `revoke` takes effect on the next request: every request with a machine token
+  looks its jti up, and an unknown, revoked or expired one is **HTTP 401**.
+- A company activated before machine tokens landed has no `graphql_machine_token`
+  table: `issue`, `list` and `revoke` then refuse with the fix — re-activate the
+  GraphQL extension for it (Setup → Install/Activate Extensions) or apply
+  `sql/update_1.1.sql` directly.
+- The token acts as its user: deactivating the user, or taking GraphQL API access
+  from its role, refuses the token too (401 / 403), and the role's areas limit what
+  it can do. Give the service a user of its own, in a role holding only what the
+  service uses, with an email nobody can receive (or keep FrontAccounting's password
+  reset off) — otherwise a reset mails that address a usable password. The dev stack
+  seeds `sgwpanel` in "GraphQL Panel": GraphQL API access plus SA_SALESTRANSVIEW,
+  SA_CUSTOMER and SA_SALESORDER, which is what `customerList` (with balances),
+  `salesOrderList/Create/Update`, `invoiceList` and `customerPaymentList` need — but
+  those areas allow more than the panel happens to use: SA_CUSTOMER also permits
+  creating, updating and deleting customers, branches and contacts, and
+  SA_SALESORDER also permits deleting orders. Read-only customer access would need
+  a separate role area; that is a later release. Its password is an unusable
+  `!unusable-…` string that no `md5()` hash can equal, so it can never `login`, and
+  its seeded email (`sgwpanel@invalid.invalid`) is unroutable (RFC 2606/6761).
+- **Rotate** by issuing a new token, switching the service to it, then revoking the
+  old one: both work in between.
+- **Use HTTPS in production.** A machine token is as good as a password for a year;
+  send it only over TLS, and keep it out of logs and repositories.
+- `tokenRefresh` never accepts a machine token, and neither `login` nor
+  `tokenRefresh` ever issues one.
+
 Generated lists take an optional Mango query:
 
 ```php

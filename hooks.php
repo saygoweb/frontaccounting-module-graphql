@@ -26,6 +26,21 @@ class hooks_graphql extends hooks
 	}
 
 	/*
+		Creates this module's tables for the company, as sgw_sales does: each file
+		runs only if its table is missing, with 0_ rewritten to the company's
+		prefix. update_1.1.sql is the machine-token table (Foundation spec §3.7).
+	*/
+	function activate_extension($company, $check_only = true)
+	{
+		$updates = array(
+			'update_1.0.sql' => array('graphql_refresh_token'),
+			'update_1.1.sql' => array('graphql_machine_token'),
+		);
+
+		return $this->update_databases($company, $updates, $check_only);
+	}
+
+	/*
 		current_user::login() asks every active extension before it checks the
 		password. The answer is true only while FaSession is logging in the user
 		named by an access token it has just verified; otherwise null, which leaves

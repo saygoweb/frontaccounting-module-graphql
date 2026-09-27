@@ -141,4 +141,128 @@ class TokenServiceTest extends TestCase
         $this->expectException(InvalidToken::class);
         $this->service()->verify('not-a-token');
     }
+
+    public function testAnAccessTokenIsNotAMachineToken(): void
+    {
+        $this->assertFalse($this->service()->verify($this->service()->issueAccess(0, 'apitest'))->machine);
+    }
+
+    public function testMachineTokenRoundTrip(): void
+    {
+        $issued = $this->service()->issueMachine(2, 'sgwpanel', 86400 * 365);
+        $claims = $this->service()->verify($issued->token);
+
+        $this->assertTrue($claims->machine);
+        $this->assertSame(2, $claims->company);
+        $this->assertSame('sgwpanel', $claims->login);
+        $this->assertSame($issued->jti, $claims->jti);
+        $this->assertSame(32, strlen($issued->jti));
+        $this->assertSame('2026-09-21 10:00:00', $issued->issuedAt->format('Y-m-d H:i:s'));
+        $this->assertSame('2027-09-21 10:00:00', $issued->expiresAt->format('Y-m-d H:i:s'));
+        $this->assertSame('2027-09-21 10:00:00', $claims->expiresAt->format('Y-m-d H:i:s'));
+    }
+
+    public function testAMachineTokenCarriesTypMachine(): void
+    {
+        $payload = explode('.', $this->service()->issueMachine(0, 'sgwpanel', 60)->token)[1];
+        $data = json_decode(base64_decode(strtr($payload, '-_', '+/')), true);
+
+        $this->assertSame('machine', $data['typ']);
+        $this->assertSame('fa-graphql', $data['iss']);
+        $this->assertSame(0, $data['coy']);
+    }
+
+    public function testAMachineTokensTimesAreWholeSeconds(): void
+    {
+        $this->clock->setTo(new \DateTimeImmutable('2026-09-21 10:00:00.748252', new \DateTimeZone('UTC')));
+        $issued = $this->service()->issueMachine(0, 'sgwpanel', 60);
+        $payload = explode('.', $issued->token)[1];
+        $data = json_decode(base64_decode(strtr($payload, '-_', '+/')), true);
+
+        $this->assertSame('000000', $issued->issuedAt->format('u'));
+        $this->assertSame($issued->expiresAt->getTimestamp(), $data['exp']);
+        $this->assertSame($issued->issuedAt->getTimestamp(), $data['iat']);
+    }
+
+    public function testAMachineTokenMayLiveExactlyTheMaximum(): void
+    {
+        $issued = $this->service(['machine_ttl_max' => 3600])->issueMachine(0, 'sgwpanel', 3600);
+
+        $this->assertSame('2026-09-21 11:00:00', $issued->expiresAt->format('Y-m-d H:i:s'));
+    }
+
+    public function testAMachineTokenLongerThanTheMaximumIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('3600');
+        $this->service(['machine_ttl_max' => 3600])->issueMachine(0, 'sgwpanel', 3601);
+    }
+
+    public function testTheDefaultMaximumIsOneYear(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->service()->issueMachine(0, 'sgwpanel', 31536001);
+    }
+
+    public function testANonPositiveLifetimeIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->service()->issueMachine(0, 'sgwpanel', 0);
+    }
+
+    public function testAMachineTokenExpires(): void
+    {
+        $jwt = $this->service()->issueMachine(0, 'sgwpanel', 60)->token;
+        $this->clock->setTo(new \DateTimeImmutable('2026-09-21 10:01:06', new \DateTimeZone('UTC')));
+
+        $this->expectException(InvalidToken::class);
+        $this->service()->verify($jwt);
+    }
+
+    /**
+     * @return array<string, array{0: mixed}>
+     */
+    public function unknownTypes(): array
+    {
+        return [
+            'refresh' => ['refresh'],
+            'Machine, capitalised' => ['Machine'],
+            'empty' => [''],
+            'a number' => [1],
+            'true' => [true],
+        ];
+    }
+
+    /**
+     * Only an absent typ (an access token) or "machine" is accepted: anything else
+     * is a token this module did not issue.
+     *
+     * @dataProvider unknownTypes
+     * @param mixed $typ
+     */
+    public function testAnyOtherTypIsRefused($typ): void
+    {
+        $config = Configuration::forSymmetricSigner(new Sha256(), InMemory::plainText(self::SECRET));
+        $now = $this->clock->now();
+        $jwt = $config->builder()->issuedBy('fa-graphql')->relatedTo('apitest')->withClaim('coy', 0)
+            ->withClaim('typ', $typ)->identifiedBy('x')
+            ->issuedAt($now)->canOnlyBeUsedAfter($now)->expiresAt($now->modify('+5 minutes'))
+            ->getToken($config->signer(), $config->signingKey())->toString();
+
+        $this->expectException(InvalidToken::class);
+        $this->service()->verify($jwt);
+    }
+
+    public function testAMachineTokenWithoutAnIdIsRefused(): void
+    {
+        $config = Configuration::forSymmetricSigner(new Sha256(), InMemory::plainText(self::SECRET));
+        $now = $this->clock->now();
+        $jwt = $config->builder()->issuedBy('fa-graphql')->relatedTo('apitest')->withClaim('coy', 0)
+            ->withClaim('typ', 'machine')
+            ->issuedAt($now)->canOnlyBeUsedAfter($now)->expiresAt($now->modify('+5 minutes'))
+            ->getToken($config->signer(), $config->signingKey())->toString();
+
+        $this->expectException(InvalidToken::class);
+        $this->service()->verify($jwt);
+    }
 }

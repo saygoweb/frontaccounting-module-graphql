@@ -98,9 +98,11 @@ class StackTest extends TestCase
             'config_graphql.php',
             'config_graphql.example.php',
             'sql/update_1.0.sql',
+            'sql/update_1.1.sql',
             'vendor/autoload.php',
             'hooks.php',
             'bin/fa-report',
+            'bin/fa-token',
             'bin/generate',
         ];
         foreach ($paths as $path) {

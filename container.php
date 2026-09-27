@@ -10,13 +10,18 @@
 
 use DI\ContainerBuilder;
 use FA\GraphQL\ApiSchema;
+use FA\GraphQL\Auth\AnormMachineTokenRepository;
 use FA\GraphQL\Auth\AnormRefreshTokenRepository;
+use FA\GraphQL\Auth\Authenticator;
+use FA\GraphQL\Auth\MachineTokenCheck;
+use FA\GraphQL\Auth\MachineTokenRepository;
 use FA\GraphQL\Auth\RefreshTokenRepository;
 use FA\GraphQL\Config;
 use FA\GraphQL\Db\CompanyPdo;
 use FA\GraphQL\Db\Connection;
 use FA\GraphQL\Error\ErrorFormatter;
 use FA\GraphQL\Fa\CompanyContext;
+use FA\GraphQL\Fa\CompanyMachineTokenCheck;
 use FA\GraphQL\Fa\FaSession;
 use FA\GraphQL\Http\BodyLimitMiddleware;
 use FA\GraphQL\Http\JsonErrorMiddleware;
@@ -43,6 +48,13 @@ return function (Config $config, RequestInfo $request): DI\Container {
         Schema::class => DI\get(ApiSchema::class),
         SessionGate::class => DI\get(FaSession::class),
         RefreshTokenRepository::class => DI\autowire(AnormRefreshTokenRepository::class),
+        // Machine tokens (spec §3.7): the lookup opens the token's company, then
+        // asks its table. Built only when a machine token arrives.
+        MachineTokenRepository::class => DI\autowire(AnormMachineTokenRepository::class),
+        MachineTokenCheck::class => DI\autowire(CompanyMachineTokenCheck::class),
+        // Named: autowiring gives an optional parameter its default (null), and an
+        // Authenticator without a check refuses every machine token.
+        Authenticator::class => DI\autowire()->constructorParameter('machine', DI\get(MachineTokenCheck::class)),
 
         // Anorm's connection: a second one to the database FrontAccounting is
         // already using through mysqli. Built on first use, which is after a company

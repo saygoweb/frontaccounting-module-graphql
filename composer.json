@@ -48,10 +48,11 @@
     },
     "scripts": {
         "test": "phpunit -c phpunit.xml",
-        "lint": "find . -name vendor -prune -o -type f \\( -name '*.php' -o -path ./bin/fa-report \\) -print0 | xargs -0 -n1 php -l",
+        "lint": "find . -name vendor -prune -o -type f \\( -name '*.php' -o -path ./bin/fa-report -o -path ./bin/fa-token \\) -print0 | xargs -0 -n1 php -l",
         "cs:check": [
             "phpcs",
-            "phpcs --stdin-path=bin/fa-report.php - < bin/fa-report"
+            "phpcs --stdin-path=bin/fa-report.php - < bin/fa-report",
+            "phpcs --stdin-path=bin/fa-token.php - < bin/fa-token"
         ],
         "cs:fix": "phpcbf",
         "analyze": "phpstan analyse --no-progress --memory-limit=512M",
@@ -68,8 +69,8 @@
     },
     "scripts-descriptions": {
         "test": "Run the PHPUnit suite. The http tests need the module served from a FrontAccounting install - docker/fa-graphql test does that.",
-        "lint": "php -l over every PHP file in the module, bin/fa-report included.",
-        "cs:check": "Check src/, tests/ and bin/fa-report against PSR-12 (phpcs.xml).",
+        "lint": "php -l over every PHP file in the module, bin/fa-report and bin/fa-token included.",
+        "cs:check": "Check src/, tests/, bin/fa-report and bin/fa-token against PSR-12 (phpcs.xml).",
         "cs:fix": "Fix what phpcbf can fix automatically.",
         "analyze": "Run PHPStan over src/ (phpstan.neon).",
         "generate": "anorm-graphql make with this module's options (bin/generate). Runs on the host too: bin/generate.",
