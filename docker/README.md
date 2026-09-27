@@ -80,6 +80,32 @@ line), then `tests/data/seed.sql`. That seed adds a `GraphQL API` role holding
 The whole sequence is idempotent, so a repeated `db load` (or `up` against an
 already-seeded volume) is safe.
 
+## Dev fixtures
+
+`docker/fa-graphql db fixtures` gives the dev stack realistic hosting-billing data,
+for developing against and for the panel app to build against, without touching
+`tests/data/seed.sql` or anything the test suites load:
+
+    docker/fa-graphql db fixtures
+
+It applies `tests/data/dev-fixtures.sql` (idempotent, like any other dataset): the
+`yr` item unit, and two service items shaped like FrontAccounting's own `add_item()`
+would write them — `HDOM` "Domain Registration" and `HGEN1` "Hosting", category 4
+("Services"), with USD prices (29.00 and 80.00) on both demo sales types. No EUR
+price rows: FrontAccounting converts the home-currency price at the exchange rate for
+a EUR customer's order date (`sales/includes/sales_db.inc` `get_price()`).
+
+Then `docker/fixtures.php` creates example documents **through the GraphQL API
+itself**, signed in as `apitest` — not a backdoor into FrontAccounting, and not
+reachable over HTTP (`.htaccess` denies everything under `docker/`): a reseller
+customer ("Example Hosting Reseller Ltd", ref `EXAMPLE-RESELLER`) with its default
+branch and a `billing@example.com` contact, and two yearly recurring sales orders
+shaped like the live data (`customerRef` `sgw-hosting-1001` / `-1002`, `HGEN1` +
+`HDOM` lines). The first is invoiced in one step and paid in full, allocated — a
+settled example; the second is left open, undelivered. Idempotent: if a customer
+with ref `EXAMPLE-RESELLER` already exists, nothing is created again — it is read
+back and reported instead.
+
 ## sgw_sales
 
 The recurring-sales module this API drives in Release 2, and the other

@@ -371,6 +371,15 @@ deal with.
 The tasks themselves are composer scripts (`composer test`, `lint`, `cs:check`,
 `analyze`, `ci`), so they run the same on a host with its own PHP.
 
+### Dev fixtures
+
+`docker/fa-graphql db fixtures` gives the dev stack realistic hosting-billing data —
+two service items (`HDOM` "Domain Registration", `HGEN1` "Hosting") and an example
+reseller customer with a settled invoice and an open recurring order — without
+touching `tests/data/seed.sql` or anything the test suites load. It creates the
+example documents through the GraphQL API itself; see `docker/README.md` for
+details. Idempotent, and safe to run against an already-fixtured database.
+
 ## Installing into FrontAccounting
 
 Clone into `modules/graphql`, run `composer install --no-dev`, then install and
