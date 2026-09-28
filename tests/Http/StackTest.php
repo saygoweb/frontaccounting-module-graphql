@@ -56,8 +56,9 @@ class StackTest extends TestCase
         )->fetchAll(\PDO::FETCH_KEY_PAIR);
 
         $this->assertSame(['apitest', 'noapi'], array_keys($rows));
-        $this->assertContains('91236', explode(';', $rows['apitest']));
-        $this->assertNotContains('91236', explode(';', $rows['noapi']));
+        $area = (string) $this->graphqlArea();
+        $this->assertContains($area, explode(';', $rows['apitest']));
+        $this->assertNotContains($area, explode(';', $rows['noapi']));
         // SA_SALESORDER = SS_SALES | 3 = (12 << 8) | 3: every lookup lists with it
         // (Release 2 spec section 4.2).
         $this->assertContains('3075', explode(';', $rows['apitest']));
@@ -70,6 +71,24 @@ class StackTest extends TestCase
             (string) getenv('FA_DB_USER'),
             (string) getenv('FA_DB_PASSWORD')
         );
+    }
+
+    /**
+     * SA_GRAPHQL as FrontAccounting numbers it for graphql's extension id:
+     * (id << 16) | (100 << 8) | 100. docker/fa-graphql registers graphql as
+     * extension 1 (91236); the FrontAccounting CI image numbers modules in the
+     * order they are activated.
+     */
+    private function graphqlArea(): int
+    {
+        $installed_extensions = [];
+        include dirname($this->moduleDir(), 2) . '/company/0/installed_extensions.php';
+        foreach ($installed_extensions as $id => $ext) {
+            if ($ext['package'] === 'graphql') {
+                return ($id << 16) | (100 << 8) | 100;
+            }
+        }
+        throw new \RuntimeException('graphql is not registered in company/0/installed_extensions.php');
     }
 
     /**

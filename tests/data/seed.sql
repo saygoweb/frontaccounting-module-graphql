@@ -5,6 +5,8 @@
 -- extension id 1: section (1 << 16) | (100 << 8), first area section | 100. The
 -- docker entrypoint registers this module as extension 1. Core areas keep their
 -- fixed codes (includes/access_levels.inc).
+-- In the FrontAccounting CI image, tests/data/seed.sh rewrites both codes for
+-- the extension id graphql has there.
 
 INSERT INTO `0_security_roles` (`role`, `description`, `sections`, `areas`, `inactive`)
 SELECT 'GraphQL API', 'System Administrator plus GraphQL API access',

@@ -1,39 +1,36 @@
 name: CI
 
-# Push only: a branch with an open pull request is tested by its pushes, so
-# pull_request would run every job a second time.
+# Runs tools/ci.sh in the FrontAccounting CI image (cambell-prince/frontaccounting
+# docker/ci), on FrontAccounting's demo company, with sgw_sales activated
+# alongside. docker/fa-graphql stays the development stack.
+
 on:
   push:
+    branches:
+      - main
+      - 'feature/**'
+      - 'fix/**'
+      - 'ci/**'
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
-    name: FA ${{ matrix.fa.name }} / PHP ${{ matrix.php }}
-    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        fa: [cp, upstream]
         php: ['7.4', '8.3']
-        fa:
-          - name: upstream
-            repo: https://github.com/FrontAccountingERP/FA.git
-            ref: master
-          - name: fork
-            repo: https://github.com/cambell-prince/frontaccounting.git
-            ref: master-cp
-    env:
-      PHP_VERSION: ${{ matrix.php }}
-      FA_REPO: ${{ matrix.fa.repo }}
-      FA_REF: ${{ matrix.fa.ref }}
-      COMPOSE_PROJECT_NAME: fa-graphql-ci-${{ matrix.fa.name }}-${{ matrix.php }}
-      # sgw_sales, whose GraphQL extension serves recurrence (Release 4 spec §6).
-      # The image clones by branch or tag (a shallow clone cannot take a SHA).
-      SGW_SALES_REF: master
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build, boot, lint, analyze, test
-        run: docker/fa-graphql ci
-      - name: Logs
-        if: failure()
-        run: |
-          docker/fa-graphql logs app || true
-          docker/fa-graphql logs errors || true
+    uses: cambell-prince/frontaccounting/.github/workflows/plugin-test.yml@master-cp
+    with:
+      fa: ${{ matrix.fa }}
+      php: ${{ matrix.php }}
+      dataset: demo
+      setup: composer install --no-interaction --no-progress
+      with: |
+        sgw_sales=https://github.com/saygoweb/frontaccounting-module-sgw_sales.git@master
+      test: sh tools/ci.sh

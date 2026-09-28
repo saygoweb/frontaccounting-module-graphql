@@ -1,5 +1,8 @@
 # Docker test stack
 
+CI no longer uses this stack: it runs `tools/ci.sh` in the FrontAccounting CI
+image (see the README's Tests section). This stack is for development.
+
 A throwaway FrontAccounting install with this module plugged into it — Apache +
 mod_php + MariaDB — for developing the GraphQL API without a FrontAccounting
 checkout, a PHP, or a database on your own machine.
