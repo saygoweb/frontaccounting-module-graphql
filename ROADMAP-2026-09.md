@@ -14,6 +14,7 @@ All of the following is merged on `main` and green in CI on {upstream FrontAccou
 | Foundation (1.0, 1.1) | Slim 4 endpoint; JWT access and rotating refresh tokens; FrontAccounting loaded in-process as the token's user; one company per request; every response JSON with FrontAccounting's output captured; runs on upstream FrontAccounting with the fork optional | `2026-09-21-foundation-design.md` |
 | Release 2 — Panel | Reference lookups; customers, branches and contacts; sales orders; `sgw_sales` recurring schedules on orders | `2026-09-25-release-2-panel-design.md` |
 | Release 3 — Billing | Deliveries; invoices from deliveries or an order in one step; customer payments and allocations; voids; emailing invoices through FrontAccounting's `rep107` | `2026-09-26-release-3-billing-design.md` |
+| Release 4 — Extensions and recurring invoices | An extension contract discovered through FrontAccounting's hooks (root fields, contributions to the sales order Type and inputs, write participants in the core's transaction); `sgw_sales` as the first extension, serving recurrence and recurring invoice generation (`recurringDueList`, `recurringGenerate` with email) | `2026-09-28-release-4-extensions-recurring-design.md` |
 | Machine tokens | Long-lived, revocable bearer tokens for server-to-server clients, issued by `bin/fa-token` | Foundation spec §3.7 |
 | Dev fixtures | `HDOM`/`HGEN1` hosting items and an example reseller for development | — |
 
@@ -24,21 +25,7 @@ The first client, the `saygoweb.com-my` hosting panel, runs its reseller billing
 module: create/update mutations, input-only entities, a `Date` scalar,
 `--without-update`/`--without-delete`.
 
-## Next: Release 4 — Recurring invoice generation
-
-Close the recurring-billing loop the panel is built around.
-
-- Expose `sgw_sales`' generation service: the list of recurring orders due, and a
-  mutation that generates (delivers and invoices) a due order, gated on `due()`.
-- Reuse Release 3's order-in-one-step invoice path and the invoice mailer, so a
-  generated invoice can be emailed in the same call or later.
-- Decide the rules the generation service leaves open: scheduling from `dt_next`
-  versus today (a wholly missed period is currently assumed rare), idempotency when a
-  generation is retried, and what a partial failure in a batch leaves behind.
-- Fix the report child's multi-company login (it installs the default company's
-  hooks before login) so emailing works for every company.
-
-## Later: the rest of accounts receivable
+## Next: the rest of accounts receivable
 
 Roughly in the order the panel is expected to need them.
 
@@ -49,6 +36,9 @@ Roughly in the order the panel is expected to need them.
    invoices**.
 4. **Quotations**, and converting a quotation to an order.
 5. **Editing posted deliveries and invoices** (today: void and re-enter).
+
+Extensions may now serve work that belongs to another FrontAccounting module; new
+extensible core types are added as a need appears (Release 4 spec §1, non-goals).
 
 ## Later: beyond AR
 
@@ -75,6 +65,8 @@ Not started; each is its own release-sized design.
 - **Several companies in one request** (one company per request is deliberate; revisit
   only with a concrete need).
 - `anorm-graphql` **1.0.0** once the module stops needing generator changes.
+- **More extensible core types** for extensions (today: the sales order Type and
+  inputs), when an extension needs them.
 
 ## Deferred hardening
 
