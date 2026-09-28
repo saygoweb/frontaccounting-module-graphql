@@ -142,15 +142,19 @@ warn() {
 
 # A checkout of saygoweb/anorm-graphql, or of sgw_sales, on the host, mounted
 # over what the image otherwise supplies. Only when asked for: compose has no
-# conditional volumes, so each is a second file.
+# conditional volumes, so each is a second file. A relative path is taken from
+# where this script is run and made absolute: compose, run with --project-directory
+# docker/, would otherwise resolve it from docker/ and mount an empty directory.
 COMPOSE_FILES=(-f "$COMPOSE_FILE")
 if [ -n "${ANORM_GRAPHQL_PATH:-}" ]; then
     [ -d "$ANORM_GRAPHQL_PATH" ] || die "ANORM_GRAPHQL_PATH=$ANORM_GRAPHQL_PATH is not a directory"
+    ANORM_GRAPHQL_PATH="$(cd "$ANORM_GRAPHQL_PATH" && pwd)"
     export ANORM_GRAPHQL_PATH
     COMPOSE_FILES+=(-f "$DOCKER_DIR/docker-compose.anorm-graphql.yml")
 fi
 if [ -n "${SGW_SALES_PATH:-}" ]; then
     [ -d "$SGW_SALES_PATH" ] || die "SGW_SALES_PATH=$SGW_SALES_PATH is not a directory"
+    SGW_SALES_PATH="$(cd "$SGW_SALES_PATH" && pwd)"
     export SGW_SALES_PATH
     COMPOSE_FILES+=(-f "$DOCKER_DIR/docker-compose.sgw-sales.yml")
 fi
@@ -366,7 +370,8 @@ cmd_db() {
         dump)   db_dump "$@" ;;
         shell)  cmd_mysql ;;
         fixtures) db_fixtures ;;
-        *) die "usage: fa-graphql db <load [demo|new|<path>]|reset|drop|dump [file]|shell|fixtures>" ;;
+        second-company) db_second_company "$@" ;;
+        *) die "usage: fa-graphql db <load [demo|new|<path>]|reset|drop|dump [file]|shell|fixtures|second-company <add|remove>>" ;;
     esac
 }
 
@@ -514,6 +519,76 @@ db_fixtures() {
     c_exec_user php "$APP_DIR/docker/fixtures.php"
 }
 
+# Release 4 spec §4.3: a second company, made FrontAccounting's default, with this
+# module inactive there — the situation in which the report child used to log in
+# with the wrong company's hooks. Same database and prefix as company 0; nothing is
+# copied. Written as root (c_exec), as the entrypoint writes them.
+#
+# Every step is marked, so `remove` undoes only what `add` did and either can run
+# again after a failure part-way: config_db.php carries a marker comment (and its
+# original waits in .before-second-company, copied before the first change), and
+# company/1 carries a .second-company-test file (it is copied under another name
+# and moved into place whole). `add` refuses a company 1 it did not make. A restart
+# rewrites config_db.php (the entrypoint); the entrypoint also removes a marked
+# company/1, and `remove` clears what an older image's restart left behind.
+SECOND_COMPANY_MARK=second-company-test
+
+db_second_company() {
+    local cfg="$FA_DIR/config_db.php"
+    local c1="$FA_DIR/company/1"
+    local mark="$SECOND_COMPANY_MARK"
+    case "${1:-}" in
+        add)
+            ensure_running
+            c_exec sh -ec "
+                if [ -d '$c1' ] && [ ! -f '$c1/.$mark' ]; then
+                    echo 'company/1 exists and was not made by db second-company add: refusing' >&2; exit 3
+                fi
+                if ! grep -q '$mark' '$cfg'; then
+                    if grep -Eq '^[[:space:]]*1[[:space:]]*=>|db_connections\\[1\\]' '$cfg'; then
+                        echo 'config_db.php already defines company 1: refusing' >&2; exit 3
+                    fi
+                    [ -f '$cfg.before-second-company' ] || cp '$cfg' '$cfg.before-second-company'
+                    sed -i 's/^\\\$def_coy = [0-9]*;/\$def_coy = 1;/' '$cfg'
+                    printf '%s\n' '/* $mark: docker/fa-graphql db second-company add */' \
+                        '\$db_connections[1] = array_merge(\$db_connections[0], array(\"name\" => \"Second (test)\"));' >> '$cfg'
+                fi
+                if [ ! -d '$c1' ]; then
+                    rm -rf '$c1.$mark'
+                    cp -a '$FA_DIR/company/0' '$c1.$mark'
+                    touch '$c1.$mark/.$mark'
+                    mv '$c1.$mark' '$c1'
+                fi"
+            c_exec php -r '
+                $f = "'"$c1"'/installed_extensions.php";
+                include $f;
+                foreach ($installed_extensions as $k => $e) {
+                    if ($e["package"] === "graphql") { $installed_extensions[$k]["active"] = false; }
+                }
+                file_put_contents($f, "<?php\n\$next_extension_id = " . (int) $next_extension_id . ";\n\$installed_extensions = "
+                    . var_export($installed_extensions, true) . ";\n");'
+            info "company 1 added as the default, graphql inactive there"
+            ;;
+        remove)
+            ensure_running
+            c_exec sh -ec "
+                if grep -q '$mark' '$cfg'; then
+                    if [ ! -f '$cfg.before-second-company' ]; then
+                        echo 'config_db.php is marked but its original is gone: docker/fa-graphql restart rewrites it' >&2
+                        exit 3
+                    fi
+                    mv '$cfg.before-second-company' '$cfg'
+                else
+                    rm -f '$cfg.before-second-company'
+                fi
+                if [ -f '$c1/.$mark' ]; then rm -rf '$c1'; fi
+                rm -rf '$c1.$mark'"
+            info "company 1 removed"
+            ;;
+        *) die "usage: fa-graphql db second-company <add|remove>" ;;
+    esac
+}
+
 db_dump() {
     ensure_running
     wait_for_db
@@ -549,6 +624,44 @@ cmd_test() {
     # Through the composer script, so `composer test` and `fa-graphql test` cannot
     # drift apart. Arguments after -- reach phpunit: fa-graphql test --filter X.
     c_exec_user composer run test -- "$@"
+}
+
+# Release 4 spec §4.3: ReportDefaultCompanyTest, with company 1 as FrontAccounting's
+# default and this module inactive there; company 1 is removed however it ends.
+cmd_test_default_company() {
+    ensure_running
+    require_phpunit
+    # Armed before anything changes, so a failure inside `add` is undone too; and
+    # anything a run interrupted before (or a restart) left behind is cleared first.
+    trap 'db_second_company remove' EXIT
+    db_second_company remove
+    db_second_company add
+    c_exec_user composer run test -- --fail-on-skipped --filter ReportDefaultCompanyTest
+    trap - EXIT
+    db_second_company remove
+}
+
+# An extension's GraphQL suites (Release 4 spec §5): modules/<name>/phpunit-graphql.xml,
+# run here, with this module's phpunit and autoloader, against the extension as it
+# is installed in this stack (the image's clone, or a host checkout bind-mounted by
+# SGW_SALES_PATH and the like). Arguments after the name reach phpunit.
+cmd_test_extension() {
+    local name="${1:-}"
+    [ -n "$name" ] || die "usage: docker/fa-graphql test-extension <name> [phpunit args]"
+    [[ "$name" =~ ^[a-z0-9_]+$ ]] || die "extension name '$name': lower-case letters, digits and _ only"
+    shift
+    ensure_running
+    require_phpunit
+    local config="$FA_DIR/modules/$name/phpunit-graphql.xml"
+    c_exec test -f "$config" || die "modules/$name has no phpunit-graphql.xml in this stack"
+    info "extension $name: $config"
+    c_exec_user php vendor/bin/phpunit -c "$config" "$@"
+}
+
+# Every installed extension that ships GraphQL suites, one name per line.
+extensions_with_suites() {
+    c_exec sh -c "cd '$FA_DIR/modules' && for f in */phpunit-graphql.xml; do [ -f \"\$f\" ] && dirname \"\$f\"; done" \
+        | grep -v '^graphql$' || true
 }
 
 # Both are composer scripts (see composer.json and phpcs.xml) so they run the
@@ -651,6 +764,13 @@ cmd_ci() {
     cmd_lint
     cmd_analyze
     cmd_test "$@"
+    # The extensions installed in the stack, with no skips: a skipped extension test
+    # is a test that did not prove its extension still works with this module.
+    local name
+    for name in $(extensions_with_suites); do
+        cmd_test_extension "$name" --fail-on-skipped
+    done
+    cmd_test_default_company
 }
 
 cmd_info() {
@@ -732,14 +852,24 @@ Database
                      then create an example reseller customer, its recurring orders,
                      an invoice and a payment through the GraphQL API. Idempotent;
                      never touches tests/data/seed.sql or what the test suites load.
+  db second-company add|remove
+                     Add company 1 (company 0's database and prefix) as the default,
+                     with this module inactive there; remove puts config_db.php back
 
 Testing and development
   test [args]        Run the PHPUnit suite (composer test)
+  test-extension <name> [args]
+                     Run an installed extension's GraphQL suites
+                     (modules/<name>/phpunit-graphql.xml) in this stack
+  test-default-company
+                     The report child with company 1 as FrontAccounting's default
+                     and this module inactive there (Release 4 §4.3)
   lint               composer lint (php -l), then composer cs:check (PSR-12)
   analyze            PHPStan over src/ (composer analyze)
   anorm [args]       Anorm's generator, pointed at the stack's database:
                      fa-graphql anorm make <database> <table> -p ...
-  ci [args]          up --build, then lint, analyze and test — what CI runs
+  ci [args]          up --build, then lint, analyze, test, the extensions' suites
+                     and test-default-company — what CI runs
   composer [args]    composer in the module directory, as you
   shell              bash there
   exec <cmd>         Run a command there
@@ -799,6 +929,8 @@ case "$cmd" in
     up) cmd_up "$@" ;;
     db) cmd_db "$@" ;;
     test) cmd_test "$@" ;;
+    test-extension) cmd_test_extension "$@" ;;
+    test-default-company) cmd_test_default_company ;;
     lint) cmd_lint "$@" ;;
     analyze|analyse) cmd_analyze "$@" ;;
     anorm) cmd_anorm "$@" ;;

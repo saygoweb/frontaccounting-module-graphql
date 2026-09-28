@@ -343,6 +343,8 @@ those files. Production uses the server's own `sendmail_path`.
   active in the default company as well as the target one; otherwise FrontAccounting
   refuses the login and every invoice is `sent: false` with the "did not run" message
   above. Installing the target company's hooks first is left for later.
+  *(revised: Release 4)* Fixed: `bin/fa-report` makes the target company
+  FrontAccounting's default before `session.inc` runs (Release 4 spec §4.3).
 
 ## 7. `anorm-graphql` 0.3 (pre-approved: code, tag and push 0.3.x)
 

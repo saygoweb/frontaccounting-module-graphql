@@ -23,8 +23,8 @@ final class FaIncludes
 
     /**
      * What a Cart needs beyond boot. includes/ui.inc is taken for granted by
-     * FrontAccounting's sales code (count_array() in sales_db.inc, for one); sgw_sales
-     * includes it for the same reason. sales_order_ui.inc is for
+     * FrontAccounting's sales code (count_array() in sales_db.inc, for one); other
+     * extensions include it for the same reason. sales_order_ui.inc is for
      * get_customer_details_to_order(); its display functions are never called.
      */
     public static function orders(): void

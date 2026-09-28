@@ -2,8 +2,6 @@
 
 namespace FA\GraphQL\Tests\Unit\Type;
 
-use FA\GraphQL\Type\SalesOrder\RecurrenceInputType;
-use FA\GraphQL\Type\SalesOrder\RecurrenceRepeatsType;
 use FA\GraphQL\Type\SalesOrder\SalesOrderCreateInput;
 use FA\GraphQL\Type\SalesOrder\SalesOrderUpdateInput;
 use FA\GraphQL\Type\SalesOrderLine\SalesOrderLineCreateInput;
@@ -31,7 +29,7 @@ class SalesOrderInputsTest extends TestCase
 
     public function testUpdateNeedsTheIdAndTheVersionAndTakesAnOptionalLineSet(): void
     {
-        $fields = $this->fieldsOf(new SalesOrderUpdateInput(new SalesOrderLineUpdateInput(), self::recurrence()));
+        $fields = $this->fieldsOf(new SalesOrderUpdateInput(new SalesOrderLineUpdateInput()));
 
         $this->assertSame('ID!', $fields['id']);
         $this->assertSame('Int!', $fields['version']);
@@ -55,7 +53,7 @@ class SalesOrderInputsTest extends TestCase
 
     public function testCreateStillRequiresItsFieldsAndLines(): void
     {
-        $fields = $this->fieldsOf(new SalesOrderCreateInput(new SalesOrderLineCreateInput(), self::recurrence()));
+        $fields = $this->fieldsOf(new SalesOrderCreateInput(new SalesOrderLineCreateInput()));
 
         $this->assertSame('ID!', $fields['customerId']);
         $this->assertSame('[SalesOrderLineCreateInput!]!', $fields['lines']);
@@ -63,19 +61,13 @@ class SalesOrderInputsTest extends TestCase
         $this->assertArrayNotHasKey('id', $fields);
     }
 
-    public function testBothOrderInputsTakeARecurrence(): void
+    public function testWithoutExtensionsNeitherOrderInputTakesARecurringSchedule(): void
     {
-        $recurrence = new RecurrenceInputType(new RecurrenceRepeatsType());
-        $create = $this->fieldsOf(new SalesOrderCreateInput(new SalesOrderLineCreateInput(), $recurrence));
-        $update = $this->fieldsOf(new SalesOrderUpdateInput(new SalesOrderLineUpdateInput(), $recurrence));
+        // recurring is an extension's (sgw_sales), appended only when it is loaded.
+        $create = $this->fieldsOf(new SalesOrderCreateInput(new SalesOrderLineCreateInput()));
+        $update = $this->fieldsOf(new SalesOrderUpdateInput(new SalesOrderLineUpdateInput()));
 
-        $this->assertSame('RecurrenceInput', $create['recurring']);
-        $this->assertSame('RecurrenceInput', $update['recurring']);
-        $this->assertSame('Date!', $this->fieldsOf($recurrence)['start']);
-    }
-
-    private static function recurrence(): RecurrenceInputType
-    {
-        return new RecurrenceInputType(new RecurrenceRepeatsType());
+        $this->assertArrayNotHasKey('recurring', $create);
+        $this->assertArrayNotHasKey('recurring', $update);
     }
 }

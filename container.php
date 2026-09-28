@@ -20,16 +20,23 @@ use FA\GraphQL\Config;
 use FA\GraphQL\Db\CompanyPdo;
 use FA\GraphQL\Db\Connection;
 use FA\GraphQL\Error\ErrorFormatter;
+use FA\GraphQL\Extension\Extensions;
+use FA\GraphQL\Extension\SchemaAssembler;
 use FA\GraphQL\Fa\CompanyContext;
 use FA\GraphQL\Fa\CompanyMachineTokenCheck;
 use FA\GraphQL\Fa\FaSession;
+use FA\GraphQL\Fa\Service\SalesOrderService;
 use FA\GraphQL\Http\BodyLimitMiddleware;
 use FA\GraphQL\Http\JsonErrorMiddleware;
 use FA\GraphQL\RequestInfo;
 use FA\GraphQL\SessionGate;
+use FA\GraphQL\Type\SalesOrder\SalesOrderCreateInput;
+use FA\GraphQL\Type\SalesOrder\SalesOrderType;
+use FA\GraphQL\Type\SalesOrder\SalesOrderUpdateInput;
 use GraphQL\Type\Schema;
 use Lcobucci\Clock\Clock;
 use Lcobucci\Clock\SystemClock;
+use Psr\Container\ContainerInterface;
 
 return function (Config $config, RequestInfo $request): DI\Container {
     $log = static function (\Throwable $e): void {
@@ -45,7 +52,21 @@ return function (Config $config, RequestInfo $request): DI\Container {
         ErrorFormatter::class => new ErrorFormatter($config->debug, $log),
         JsonErrorMiddleware::class => new JsonErrorMiddleware($config->debug, $log),
         BodyLimitMiddleware::class => new BodyLimitMiddleware($config->maxBodyBytes),
-        Schema::class => DI\get(ApiSchema::class),
+        // The served schema: ApiSchema plus the extensions active for the company
+        // (Release 4 spec §2.6). Built by GraphQLAction after the session middleware
+        // has entered the token's company. Extensions::loaded() must run before
+        // anything reads an extensible type's fields (see ExtensibleType).
+        Schema::class => static function (ContainerInterface $c): Schema {
+            return SchemaAssembler::build($c->get(ApiSchema::class), $c->get(Extensions::class)->loaded());
+        },
+        // One per request. Named for the types and the service below: each takes
+        // Extensions as an optional last parameter (so unit tests can build them
+        // without one), and autowiring would give it null.
+        Extensions::class => DI\autowire(),
+        SalesOrderService::class => DI\autowire()->constructorParameter('extensions', DI\get(Extensions::class)),
+        SalesOrderType::class => DI\autowire()->constructorParameter('extensions', DI\get(Extensions::class)),
+        SalesOrderCreateInput::class => DI\autowire()->constructorParameter('extensions', DI\get(Extensions::class)),
+        SalesOrderUpdateInput::class => DI\autowire()->constructorParameter('extensions', DI\get(Extensions::class)),
         SessionGate::class => DI\get(FaSession::class),
         RefreshTokenRepository::class => DI\autowire(AnormRefreshTokenRepository::class),
         // Machine tokens (spec §3.7): the lookup opens the token's company, then

@@ -132,7 +132,8 @@ class SalesOrderTypeTest extends TestCase
      * The create Input: the Type's fields less the key and SalesOrderCreateInput::SERVER_SET,
      * the required ones non-null, plus the lines. The update Input: a patch — the key
      * and the version read non-null, the rest optional, less SalesOrderUpdateInput::SERVER_SET,
-     * plus the optional lines. Both take the optional recurring schedule (Task 9).
+     * plus the optional lines. Both take the optional recurring schedule when the sgw_sales
+     * extension is active (Release 4 spec §3).
      */
     public function testInputMirrorsTheType(): void
     {
@@ -158,26 +159,30 @@ class SalesOrderTypeTest extends TestCase
             $required = in_array($name, $this->requiredFields(), true);
             $this->assertSame($required ? $bare . '!' : $bare, $create[$name] ?? null, "SalesOrderCreateInput.$name");
         }
+        $extensions = $this->container->get(\FA\GraphQL\Extension\Extensions::class)->loaded()->names();
+        $withRecurring = in_array('sgw_sales', $extensions, true);
+        $extra = $withRecurring ? ['lines', 'recurring'] : ['lines'];
         $this->assertSame('[SalesOrderLineCreateInput!]!', $create['lines'] ?? null);
-        $this->assertSame('RecurrenceInput', $create['recurring'] ?? null);
+        $this->assertSame($withRecurring ? 'RecurrenceInput' : null, $create['recurring'] ?? null);
         $this->assertSame(
             [],
-            array_diff(array_keys($create), array_keys($this->expectedFieldTypes()), ['lines', 'recurring']),
+            array_diff(array_keys($create), array_keys($this->expectedFieldTypes()), $extra),
             'nothing else on the create Input'
         );
         $this->assertSame('[SalesOrderLineUpdateInput!]', $update['lines'] ?? null);
-        $this->assertSame('RecurrenceInput', $update['recurring'] ?? null);
+        $this->assertSame($withRecurring ? 'RecurrenceInput' : null, $update['recurring'] ?? null);
         $this->assertSame(
             [],
-            array_diff(array_keys($update), array_keys($this->expectedFieldTypes()), ['lines', 'recurring']),
+            array_diff(array_keys($update), array_keys($this->expectedFieldTypes()), $extra),
             'nothing else on the update Input'
         );
     }
 
     public function testARecurringOrderThroughTheSchema(): void
     {
-        if (!$this->container->get(\FA\GraphQL\Fa\Service\RecurringSchedule::class)->isAvailable()) {
-            $this->markTestSkipped('sgw_sales is not active in this stack.');
+        $extensions = $this->container->get(\FA\GraphQL\Extension\Extensions::class)->loaded()->names();
+        if (!in_array('sgw_sales', $extensions, true)) {
+            $this->markTestSkipped('The sgw_sales extension is not active in this stack.');
         }
         $input = array_merge($this->sampleInput(), [
             'recurring' => ['start' => date('Y-m-d'), 'repeats' => 'MONTH', 'every' => 1, 'day' => 1],

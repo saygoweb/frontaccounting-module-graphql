@@ -5,6 +5,8 @@ namespace FA\GraphQL\Fa\Service;
 use FA\GraphQL\Error\BadInput;
 use FA\GraphQL\Error\FaRejected;
 use FA\GraphQL\Error\Forbidden;
+use FA\GraphQL\Extension\Extensions;
+use FA\GraphQL\Extension\SalesOrderParticipant;
 use FA\GraphQL\Fa\DateConversion;
 
 /**
@@ -31,11 +33,23 @@ class SalesOrderService
     private const FROZEN = 'Something on this order has been delivered or invoiced: its customer, branch, price list, '
         . 'date, payment terms and prepayment can no longer change.';
 
-    private RecurringSchedule $schedule;
+    private ?Extensions $extensions;
 
-    public function __construct(RecurringSchedule $schedule)
+    public function __construct(?Extensions $extensions = null)
     {
-        $this->schedule = $schedule;
+        $this->extensions = $extensions;
+    }
+
+    /**
+     * The company's extensions that take part in order writes (Release 4 spec §2.4),
+     * in registration order. Called inside the caller's ServiceCall: whatever one
+     * throws fails the order and rolls it back.
+     *
+     * @return SalesOrderParticipant[]
+     */
+    private function participants(): array
+    {
+        return $this->extensions === null ? [] : $this->extensions->loaded()->salesOrderParticipants();
     }
 
     /**
@@ -54,14 +68,13 @@ class SalesOrderService
         $date = DateConversion::toFa($input['orderDate'] ?? null, 'orderDate');
         $this->assertFiscalYear($date, 'orderDate');
 
-        // cart_class.inc :94-110, read() :246-286: a new cart with a default date and
-        // reference. The date is replaced before anything is computed from it.
-        if (self::given($input, 'recurring')) {
-            // Refused before anything is written: sgw_sales absent, or a bad schedule.
-            $this->schedule->assertWritable('recurring');
-            RecurringSchedule::toColumns($input['recurring']);
+        // Refused before anything is written: an extension's own input checks.
+        foreach ($this->participants() as $participant) {
+            $participant->validate($input);
         }
 
+        // cart_class.inc :94-110, read() :246-286: a new cart with a default date and
+        // reference. The date is replaced before anything is computed from it.
         $cart = new \Cart(ST_SALESORDER, 0);
         $cart->document_date = $date;
         $cart->cust_ref = '';
@@ -84,8 +97,8 @@ class SalesOrderService
         if ($orderNo == -1) {
             throw new BadInput('The entered reference is already in use.', 'reference');
         }
-        if (self::given($input, 'recurring')) {
-            $this->schedule->write((int) $orderNo, $input['recurring']);
+        foreach ($this->participants() as $participant) {
+            $participant->afterCreate((int) $orderNo, $input);
         }
 
         return (int) $orderNo;
@@ -267,8 +280,8 @@ class SalesOrderService
     /**
      * check_item_data(), sales_order_entry.php :531-553. The "description cannot be
      * empty" check (:536-540) does not apply: FrontAccounting takes the item's own.
-     * $qtyDelivered and $recurring are for Task 8's updates and Task 9's recurring
-     * orders.
+     * $qtyDelivered is for updates; $relaxed lifts the delivered floor for an order a
+     * participant relaxes (isRelaxed()).
      */
     protected function checkLine(
         string $stockId,
@@ -277,7 +290,7 @@ class SalesOrderService
         float $discountPercent,
         string $field,
         float $qtyDelivered,
-        bool $recurring
+        bool $relaxed
     ): void {
         global $SysPrefs;
 
@@ -298,7 +311,7 @@ class SalesOrderService
                 "$field.unitPrice"
             );
         }
-        if (!$recurring && $quantity < $qtyDelivered) {
+        if (!$relaxed && $quantity < $qtyDelivered) {
             throw new BadInput(
                 'The quantity cannot be less than has already been delivered.',
                 "$field.quantity"
@@ -497,9 +510,8 @@ class SalesOrderService
     public function update(array $input): void
     {
         FaIncludes::orders();
-        if (self::given($input, 'recurring')) {
-            $this->schedule->assertWritable('recurring');
-            RecurringSchedule::toColumns($input['recurring']);
+        foreach ($this->participants() as $participant) {
+            $participant->validate($input);
         }
         $id = (int) $input['id'];
         OrderLock::version($id, (int) $input['version']);
@@ -507,8 +519,8 @@ class SalesOrderService
 
         // read_sales_order(), sales_order_db.inc :303-355.
         $cart = new \Cart(ST_SALESORDER, $id);
-        $recurring = $this->isRecurringOrder($id, $input);
-        if ($cart->is_started() && !$recurring) {
+        $relaxed = $this->isRelaxed($id, $input);
+        if ($cart->is_started() && !$relaxed) {
             $this->assertHeaderUnchanged($cart, $input);
         }
 
@@ -552,7 +564,7 @@ class SalesOrderService
             $this->reprice($cart);
         }
         if (array_key_exists('lines', $input) && $input['lines'] !== null) {
-            $this->replaceLines($cart, array_values($input['lines']), $recurring);
+            $this->replaceLines($cart, array_values($input['lines']), $relaxed);
         }
         $this->validate($cart);
 
@@ -586,14 +598,21 @@ class SalesOrderService
     }
 
     /**
-     * sgw_sales keys its relaxations to its "Recurring Order" box: an order that has a
-     * schedule, or is being given one now.
+     * An extension may keep an order's header editable once delivered and lift the
+     * delivered-quantity floor (a recurring order, for one): true when any
+     * participant says so (Release 4 spec §2.4).
      *
      * @param array<string, mixed> $input
      */
-    protected function isRecurringOrder(int $id, array $input): bool
+    protected function isRelaxed(int $id, array $input): bool
     {
-        return self::given($input, 'recurring') || $this->schedule->read($id) !== null;
+        foreach ($this->participants() as $participant) {
+            if ($participant->isRelaxed($id, $input)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -601,19 +620,23 @@ class SalesOrderService
      */
     protected function afterUpdate(int $id, array $input): void
     {
-        if (self::given($input, 'recurring')) {
-            $this->schedule->write($id, $input['recurring']);
+        foreach ($this->participants() as $participant) {
+            $participant->afterUpdate($id, $input);
         }
     }
 
     protected function afterDelete(int $id): void
     {
-        $this->schedule->delete($id);
+        foreach ($this->participants() as $participant) {
+            $participant->afterDelete($id);
+        }
     }
 
     protected function afterClose(int $id): void
     {
-        $this->schedule->end($id, DateConversion::fromFa(\Today()));
+        foreach ($this->participants() as $participant) {
+            $participant->afterClose($id);
+        }
     }
 
     /**
@@ -698,7 +721,7 @@ class SalesOrderService
      *
      * @param array<int, array<string, mixed>> $lines
      */
-    private function replaceLines(\Cart $cart, array $lines, bool $recurring): void
+    private function replaceLines(\Cart $cart, array $lines, bool $relaxed): void
     {
         if (count($lines) === 0) {
             throw new BadInput('An order needs at least one line.', 'lines');
@@ -737,7 +760,7 @@ class SalesOrderService
                 $discount,
                 $field,
                 (float) $line->qty_done,
-                $recurring
+                $relaxed
             );
             if (self::given($given, 'unitPrice')) {
                 $this->warnIfBelowCost($cart, $line->stock_id, $price);

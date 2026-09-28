@@ -50,6 +50,16 @@ if ($faReportRoot[0] !== '/') {
 }
 $faReportRoot = realpath($faReportRoot) ?: $faReportRoot;
 
+// Release 4 spec §4.3: FrontAccounting installs the hooks of user_company() before
+// the login (includes/session.inc:498-501), and a new session's user_company() is
+// $def_coy (includes/current_user.inc:42-45). Include config_db.php here, at file
+// scope, and make the target company the default: session.inc's
+// include_once($path_to_root . "/config_db.php") then skips it, so the child
+// installs its target company's hooks — hooks_graphql among them wherever this
+// module is active for that company — not the default company's.
+include_once $faReportRoot . '/config_db.php';
+$def_coy = $faReportCompany;
+
 // The web UI's brute-force counter (Release 1, Checkpoint B I-2): current_user::login()
 // rewrites it on every successful login. Put back exactly as it was.
 $faReportFailLog = $faReportRoot . '/tmp/faillog.php';

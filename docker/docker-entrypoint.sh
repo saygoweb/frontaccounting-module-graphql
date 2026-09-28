@@ -38,6 +38,13 @@ fi
 # FrontAccounting configuration
 # ---------------------------------------------------------------------------
 
+# What `docker/fa-graphql db second-company add` made, gone with the config_db.php
+# rewritten below: its company/1 (marked, so a real one is never touched).
+if [ -f "$FA_ROOT/company/1/.second-company-test" ]; then
+    rm -rf "$FA_ROOT/company/1"
+fi
+rm -rf "$FA_ROOT/company/1.second-company-test" "$FA_ROOT/config_db.php.before-second-company"
+
 cat > "$FA_ROOT/config_db.php" <<EOF
 <?php
 /*

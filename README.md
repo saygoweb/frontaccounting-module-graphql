@@ -3,7 +3,7 @@
 A GraphQL API for [FrontAccounting](https://frontaccounting.com/), delivered as a
 module (extension) that lives at `modules/graphql` inside a FrontAccounting tree.
 
-**Status: Release 3 (Billing).** What comes next is in
+**Status: Release 4 (Extensions and recurring invoices).** What comes next is in
 [`ROADMAP-2026-09.md`](ROADMAP-2026-09.md); the designs are in
 `docs/superpowers/specs/`.
 
@@ -19,7 +19,8 @@ areas apply; one company per request; every response is JSON.
 | Reference data | `paymentTermsList`, `taxGroupList`, `salesAreaList`, `salesmanList`, `locationList`, `shipperList`, `creditStatusList`, `currencyList`, `stockItemList`, `salesTypeList`, `bankAccountList` | — (read-only) |
 | Customers | `customerList` (with `branches`, `contacts`, `balance`), `branchList`, `contactList` | `customerCreate`/`Update`/`Delete` (create adds the default branch and contact), `branchCreate`/`Update`/`Delete`, `contactCreate`/`Update`/`Delete` |
 | Sales orders | `salesOrderList` (with `lines`, `recurring`), `salesOrderLineList` | `salesOrderCreate`/`Update` (version-checked)/`Delete` (FrontAccounting's cancel: deleted, or closed once delivered) |
-| Recurring schedules | `recurring` on sales orders (when `sgw_sales` is active) | nested `recurring` input on the order mutations |
+| Recurring schedules (sgw_sales extension) | `recurring` on sales orders — from the `sgw_sales` extension, when it is active for the company | nested `recurring` input on the order mutations (the same extension) |
+| Recurring invoices (sgw_sales extension) | `recurringDueList(asOf)` | `recurringGenerate` (deliver, invoice and optionally email each due order; items independent) |
 | Deliveries | `deliveryList`, `deliveryLineList` | `deliveryCreate` (whole or partial), `deliveryDelete` (void) |
 | Invoices | `invoiceList` (with `lines`, `total`, `outstanding`), `invoiceLineList` | `invoiceCreate` (from deliveries, or an order in one step), `invoiceDelete` (void), `invoiceEmail` (FrontAccounting's `rep107`) |
 | Payments | `customerPaymentList` (with `allocations`, `unallocated`), `allocationList` | `customerPaymentCreate` (with allocations), `customerPaymentUpdate` (reallocate), `customerPaymentDelete` (void) |
@@ -28,9 +29,12 @@ Every list takes `query: MangoInput` (a JSON Mango selector, `limit`, `skip`,
 `sort`). Writes go through FrontAccounting's own functions — references, audit trail,
 GL postings, hooks — in one transaction per mutation call; a batch is atomic.
 
-Not yet: recurring invoice generation (Release 4), credit notes, quotations, direct
-and prepayment invoices, accounts payable, general ledger and banking, inventory
-maintenance. See the roadmap.
+Rows marked *(sgw_sales extension)* are served by the `sgw_sales` FrontAccounting
+extension through this module's extension contract, only for companies where
+`sgw_sales` is active; see [Extensions](#extensions).
+
+Not yet: credit notes, quotations, direct and prepayment invoices, accounts
+payable, general ledger and banking, inventory maintenance. See the roadmap.
 
 ## Calling the API
 
@@ -203,12 +207,14 @@ recurring: { start: "2026-10-01", repeats: MONTH, every: 1, day: 1 }
 `repeats` is `MONTH` (with `day`, 1–31) or `YEAR` (with `monthDay`, `"MM-DD"`).
 To end a schedule, update the order with `recurring: { …, end: "2027-09-30" }`.
 The schedule is written in the same transaction as its order: deleting the order
-deletes it, and closing the order ends it. Without `sgw_sales`, `recurring` is
-refused (`BAD_INPUT`) and always reads `null`. A recurring order keeps its
+deletes it, and closing the order ends it. Where `sgw_sales` is not active for the
+company, `recurring` is absent from that company's schema, on input and output (a
+query or input that names it fails validation as an unknown field). A recurring order keeps its
 header editable once invoices have been generated from it, and its quantities
 may drop below what was delivered, as `sgw_sales`' own page allows: each
-generated invoice raises the delivered quantity. Generating the recurring invoices
-comes in Release 4.
+generated invoice raises the delivered quantity. Generating the recurring
+invoices is [`recurringDueList`/`recurringGenerate`](#recurring-invoice-generation-sgw_sales),
+also served by `sgw_sales`.
 
 ### The panel's flow
 
@@ -316,6 +322,116 @@ $gql('mutation ($in: [CustomerPaymentCreateInput!]!) { customerPaymentCreate(inp
     $pair['accessToken']);
 ```
 
+## Extensions
+
+Other FrontAccounting extensions can add to this API without this module knowing
+about them (Release 4 spec §2). `sgw_sales` is the first: it serves the recurrence
+fields and recurring invoice generation.
+
+**Discovery.** When a request opens a company, this module calls
+`hook_invoke_all('graphql_extensions', $registry)` over that company's active
+FrontAccounting extensions. An extension adds a method to its `hooks_*` class:
+
+```php
+function graphql_extensions(&$registry, $opts = null)
+{
+    if (interface_exists(\FA\GraphQL\Extension\Extension::class)) {
+        $registry->register(new \My_Module\GraphQL\MyExtension());
+    }
+}
+```
+
+The `interface_exists` guard means the extension loads none of this module's classes
+unless this module is serving the request; nothing needs `composer require` — the
+contract is loaded by this module's autoloader in the same PHP process. An extension
+inactive for the token's company contributes nothing: its fields are absent from that
+company's schema.
+
+**The contract** (`FA\GraphQL\Extension\`, version `1.0`):
+
+| | |
+|---|---|
+| `Extension` | `name()`, `contractVersion()`, `queryFields()`, `mutationFields()`, `typeFields()`, `inputFields()`, `participants()` — extend `AbstractExtension` and override what you contribute |
+| `queryFields` / `mutationFields` | root fields, `name => field config`; types are the extension's own (generated with `anorm-graphql` from its models where it has any, extending `FaModelType`) |
+| `typeFields` / `inputFields` | fields added to extensible core types: `SalesOrderType`, `SalesOrderCreateInput`, `SalesOrderUpdateInput`; input fields must be nullable |
+| `participants` | `SalesOrderParticipant` objects: `validate`, `isRelaxed`, `afterCreate`, `afterUpdate`, `afterDelete`, `afterClose` — called by the sales order service inside the order's transaction |
+| `ExtensionContext` | the request's container, `FaSession`, `InvoiceMailer`, `includeFa()`, company and login; use `Guard`, `ServiceCall`, `FaTransaction`, `DocumentLock`, `DateConversion`, `BadInput` and `FaRejected` as the core does |
+
+**Loader rules**, checked on every request; a rejected extension is dropped and logged
+(`graphql extension <name>: <reason>` in the error log), never failing the request:
+
+- no root field, type, type field or input field that the core or an earlier extension
+  already has — on a clash the later extension is dropped whole;
+- `typeFields`/`inputFields` only on the extensible core types above;
+- contributed input fields nullable, and contributed type fields nullable too (root
+  query and mutation fields may be non-null);
+- field types of the right kind: output types on `typeFields` and root fields, input
+  types on `inputFields`;
+- `contractVersion()` with the same major version as this module's contract (a newer
+  minor is accepted);
+- an exception while registering or collecting contributions drops that extension;
+- a `graphql_extensions` hook that throws is logged and skipped, and the other
+  extensions still register.
+
+A participant that throws during a write is **not** isolated: it is part of the
+mutation's transaction, so the mutation fails and nothing is written. Extensions are
+trusted code — they run in the request's process, transaction and document lock.
+
+**Testing an extension.** Put its GraphQL tests in `<extension>/tests/GraphQL/` with
+their own PHPUnit config, and run them inside this module's stack against a checkout
+of the extension bind-mounted over the image's copy:
+
+    docker/fa-graphql test-extension sgw_sales
+
+`apiVersion` is this module's version; an extension's fields are versioned by the
+extension.
+
+### Recurring invoice generation (sgw_sales)
+
+For companies where `sgw_sales` is active:
+
+```graphql
+query ($asOf: Date!) {
+  recurringDueList(asOf: $asOf) { orderId customerId reference customerRef next repeats every monthDay }
+}
+
+mutation ($in: [RecurringGenerateInput!]!) {
+  recurringGenerate(input: $in) {
+    orderId invoiceId deliveryId next
+    email { sent recipient messages }
+    error { code message field }
+  }
+}
+```
+
+- `recurringGenerate` takes `{orderId, date, email}` per item. Each item delivers and
+  invoices one due period and advances the schedule, in one FrontAccounting
+  transaction: a retry after success finds the order not due and bills nothing twice
+  (`error.code` `NOT_DUE`). A closed order, or one whose schedule has ended on or
+  before the date asked, is refused too (`error.code` `ENDED`).
+- **Items are independent**: a refused item reports `error` and the rest continue — a
+  billing run over many orders is not all-or-nothing. This is the one exception to the
+  module's atomic batches.
+- Each item's `error.code` is one of `NOT_FOUND` (no such order, or no schedule),
+  `NOT_DUE`, `ENDED`, `BAD_INPUT` with `error.field` `"date"` (no exchange rate for
+  the date, or a date outside an open fiscal year — closed, or out of range),
+  `FA_REJECTED` (customer on hold, a prepayment order, nothing to deliver,
+  insufficient stock, a schedule whose `every` is outside 1–127 or that would not move
+  past the date, or FrontAccounting refusing the delivery or invoice) or `INTERNAL`.
+  `error.field` names the input concerned (`"date"` for a rate or fiscal-year refusal,
+  `"orderId"` with `NOT_FOUND`), and is null for the other codes.
+- `email: true` sends each invoice through FrontAccounting's `rep107` after its item
+  commits, with `invoiceEmail`'s rules; a failed email leaves `error` null and the
+  invoice written, with `email.sent` false and `email.messages` saying why.
+- `recurringDueList.next` is a never-generated schedule's start date; once generated,
+  its next due date.
+- Areas: `recurringDueList` needs *Sales transactions view* (`SA_SALESTRANSVIEW`);
+  `recurringGenerate` needs *Sales deliveries edition* (`SA_SALESDELIVERY`) and
+  *Sales invoices edition* (`SA_SALESINVOICE`). The seeded *GraphQL Panel* role can
+  list but not generate; granting generation to a machine-token user is an operator
+  decision.
+- Scheduling rules (what "due" means, the next date) are `sgw_sales`' own.
+
 ## Generating Types
 
 Types are generated from the Anorm models in `src/Model` by
@@ -379,6 +495,7 @@ themselves are in `docs/superpowers/specs/` and the plans in
 | `hooks.php` | `hooks_graphql` — FrontAccounting's extension contract; declares the `SA_GRAPHQL` security area and creates the module's tables on activation |
 | `index.php`, `app.php`, `container.php`, `.htaccess` | the endpoint: every request under `modules/graphql/` is routed to `index.php` |
 | `src/` | `FA\GraphQL\` (PSR-4); `src/Model` and `src/Type` are largely generated by `bin/generate` |
+| `src/Extension/` | the extension contract: interfaces, registry, loader, context |
 | `sql/` | the module's tables, applied on activation |
 | `bin/` | `generate` (Types), `fa-token` (machine tokens), `fa-report` (FrontAccounting reports in a CLI child); CLI only, denied over HTTP |
 | `tests/Unit` | no FrontAccounting, no database, no web server |
@@ -417,6 +534,30 @@ activate the extension under Setup → Install/Activate Extensions, and grant
 "GraphQL API access" to the roles that should have it. Activation creates the
 module's tables for that company; an install activated before the machine-token
 release must be re-activated per company to get `graphql_machine_token`.
+
+**Deploying Release 4.** Release 4 spans this module and `sgw_sales` (which now
+serves recurrence and recurring invoice generation as a GraphQL extension).
+
+1. Deploy `sgw_sales` first. It is inert on an older module (no extension loader), and
+   that older module keeps serving `recurring` itself; keep the window short and make
+   no rhythm changes through the API during it (the old API clears `dt_next` on one).
+2. Deploy this module. Deployed without the new `sgw_sales`, it drops `recurring` from
+   the schema.
+3. Re-activate, for **each** company, `sgw_sales` (which applies its `update_1.4.sql`;
+   until then `recurring` writes are refused with `FA_REJECTED` naming the script)
+   and this module.
+
+*Before deploying (operator check).* Release 2's API cleared `dt_next` on a rhythm
+change. A schedule so cleared after it was billed reads as never generated, and is due
+again from its start. On each company where the API changed schedules, run
+
+```sql
+SELECT sr.trans_no FROM 0_sales_recurring sr
+JOIN 0_debtor_trans dt ON dt.order_=sr.trans_no AND dt.type=10
+WHERE sr.dt_next IS NULL GROUP BY sr.trans_no;
+```
+
+(with that company's table prefix) and set `dt_next` by hand on every row it returns.
 
 **Behind a reverse proxy.** `login` enforces FrontAccounting's own failed-login
 throttle (`login_delay`, `login_max_attempts`, `tmp/faillog.php`), and that throttle
