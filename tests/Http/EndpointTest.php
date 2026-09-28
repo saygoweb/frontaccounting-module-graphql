@@ -6,7 +6,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Through Apache, .htaccess and index.php, which the unit tests never touch.
- * FA_GRAPHQL_URL is set by the docker stack; elsewhere, point it at an install.
+ * FA_GRAPHQL_URL is set by tools/ci.sh, or derived from the CI image's FA_URL;
+ * elsewhere, point it at an install.
  */
 class EndpointTest extends TestCase
 {

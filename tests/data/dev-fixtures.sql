@@ -1,8 +1,7 @@
--- Dev-stack hosting-billing fixtures: realistic items and prices for developers and
--- the panel app to build against. Loaded by `docker/fa-graphql db fixtures`, never by
+-- Dev hosting-billing fixtures: realistic items and prices for developers and
+-- the panel app to build against. Loaded by tools/dev-fixtures.sh, never by
 -- the test suites (tests/data/seed.sql is untouched and stays the only dataset they
--- load). Idempotent, and the 0_ prefix is rewritten on the way in when DB_PREFIX
--- differs, exactly as seed.sql is (docker/fa-graphql's prefix_filter).
+-- load). Idempotent. Written for the 0_ prefix, as seed.sql is.
 --
 -- The item unit and two items mirror what FrontAccounting's own add_item()
 -- (inventory/includes/db/items_db.inc) would write for a service item: one
@@ -71,7 +70,7 @@ WHERE NOT EXISTS (SELECT 1 FROM `0_item_codes` WHERE `stock_id` = 'HGEN1' AND `i
 -- Home-currency (USD) prices on both demo sales types. No EUR rows: FrontAccounting
 -- converts the home-currency price at the exchange rate for a EUR customer's order
 -- date (sales/includes/sales_db.inc get_price()) — verified on the stack for
--- customer 2 (EUR): see docker/fixtures.php's report and docker/README.md.
+-- customer 2 (EUR): see tools/fixtures.php's report.
 INSERT INTO `0_prices` (`stock_id`, `sales_type_id`, `curr_abrev`, `price`)
 SELECT 'HDOM', 1, 'USD', 29.00
 FROM DUAL

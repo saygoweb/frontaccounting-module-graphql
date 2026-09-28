@@ -13,9 +13,8 @@ use FA\GraphQL\Tests\Support\ReportFiles;
 /**
  * Release 4 spec §4.3: the report child logs in for its target company even when
  * FrontAccounting's default company does not have this module active. Runs only
- * under `docker/fa-graphql test-default-company`, which makes company 1 the default
- * with graphql inactive there (`db second-company add`) and removes it afterwards;
- * skipped otherwise.
+ * under tools/ci.sh's default-company step, which makes company 1 the default
+ * with graphql inactive there and removes it afterwards; skipped otherwise.
  *
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
@@ -34,10 +33,10 @@ class ReportDefaultCompanyTest extends InvoiceTestCase
     {
         parent::setUp();
         if ((int) ($GLOBALS['def_coy'] ?? 0) !== 1 || !isset($GLOBALS['db_connections'][1])) {
-            $this->markTestSkipped('Needs company 1 as the default: run docker/fa-graphql test-default-company.');
+            $this->markTestSkipped('Needs company 1 as the default: run tools/ci.sh.');
         }
         if (!MailCatcher::available()) {
-            $this->markTestSkipped('The stack mail catcher is not installed (docker/fa-graphql up --build).');
+            $this->markTestSkipped('The CI image mail catcher is not installed (/var/mail-catcher).');
         }
         $this->mailBefore = MailCatcher::files();
         $this->pdfBefore = ReportFiles::files(Bootstrap::defaultRoot());

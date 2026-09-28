@@ -113,7 +113,8 @@ by the API, and run as the web server's user outside the dev stack (for example
 `sudo -u www-data`) — not root, or FrontAccounting may create root-owned files
 under `tmp/` that the web server can no longer write:
 
-    # in the docker stack, prefix each with: docker/fa-graphql exec
+    # in a development environment, from the FrontAccounting checkout, prefix each with:
+    #   docker/ci/plugin-dev.sh --env graphql exec --dir modules/graphql
     bin/fa-token issue  --company 0 --user sgwpanel --days 365 --label "my.saygoweb.com"
     bin/fa-token list   --company 0
     bin/fa-token revoke --company 0 <jti>
@@ -394,10 +395,11 @@ mutation's transaction, so the mutation fails and nothing is written. Extensions
 trusted code — they run in the request's process, transaction and document lock.
 
 **Testing an extension.** Put its GraphQL tests in `<extension>/tests/GraphQL/` with
-their own PHPUnit config, and run them inside this module's stack against a checkout
-of the extension bind-mounted over the image's copy:
+their own PHPUnit config, and run them with this module's PHPUnit in a development
+environment (see [Development](#development)) that has the extension activated
+alongside:
 
-    docker/fa-graphql test-extension sgw_sales
+    docker/ci/plugin-dev.sh --env graphql exec --dir modules/graphql php vendor/bin/phpunit -c ../sgw_sales/phpunit-graphql.xml
 
 `apiVersion` is this module's version; an extension's fields are versioned by the
 extension.
@@ -476,17 +478,8 @@ bin/generate             # write Types, Inputs, tests and ApiSchema.php entries
 
 - Generating with a local checkout, on the host:
   `ANORM_GRAPHQL_CHECKOUT=../../../anorm-graphql bin/generate`.
-- Running a local checkout in the container: set `ANORM_GRAPHQL_PATH` in
-  `docker/.env`, `docker/fa-graphql up`, then — locally only, never committed:
-
-  ```bash
-  docker/fa-graphql composer config repositories.local '{"type": "path", "url": "/opt/anorm-graphql", "options": {"symlink": true}}'
-  docker/fa-graphql composer update saygoweb/anorm-graphql
-  ```
-
-  Before committing, `docker/fa-graphql composer config --unset repositories.local`
-  and `docker/fa-graphql composer update saygoweb/anorm-graphql`, so `composer.lock`
-  points at the tagged release. While the symlink is in place, host generation must
+- Running a local checkout in a development environment: see
+  [Development](#development). While its symlink is in place, host generation must
   use `ANORM_GRAPHQL_CHECKOUT`: the symlink resolves only inside the container.
 
 ## How it is being built
@@ -515,9 +508,9 @@ themselves are in `docs/superpowers/specs/` and the plans in
 | `sql/` | the module's tables, applied on activation |
 | `bin/` | `generate` (Types), `fa-token` (machine tokens), `fa-report` (FrontAccounting reports in a CLI child); CLI only, denied over HTTP |
 | `tests/Unit` | no FrontAccounting, no database, no web server |
-| `tests/Integration`, `tests/Generated` | FrontAccounting loaded in-process against the stack's database |
-| `tests/Http` | through Apache; needs the docker stack or an install (`FA_GRAPHQL_URL`) |
-| `docker/` | a throwaway FrontAccounting with this checkout plugged into it — see `docker/README.md` |
+| `tests/Integration`, `tests/Generated` | FrontAccounting loaded in-process against its database |
+| `tests/Http` | through Apache; needs FrontAccounting's CI image or an install (`FA_GRAPHQL_URL`) |
+| `tools/` | `ci.sh` (CI), `init.sh` (config and seed), `dev-fixtures.sh` and `fixtures.php` (dev data); CLI only, denied over HTTP |
 
 ## Tests
 
@@ -531,32 +524,49 @@ that repository checked out beside this one, the same run locally is:
       --with sgw_sales=https://github.com/saygoweb/frontaccounting-module-sgw_sales.git@master \
       . -- sh tools/ci.sh
 
-`docker/fa-graphql` remains the development stack: dev fixtures, Voyager, the
-mail listing, anorm-graphql co-development (see `docker/README.md`).
+## Development
 
-## Developing
+Develop in a development environment of FrontAccounting's CI package
+(`docker/ci/plugin-dev.sh` in the FrontAccounting checkout this module lives
+in, as `modules/graphql`). It mounts that checkout's `modules/` folder, so
+edits here are live, and keeps FrontAccounting with this module and sgw_sales
+on `http://localhost:8100/`, the endpoint saygoweb.com-my's `FA_ENDPOINT`
+uses. Its settings are in the FrontAccounting checkout, in
+`docker/ci/dev/graphql.env`:
 
-    docker/fa-graphql init      # pick host ports that are free here
-    docker/fa-graphql up        # build, boot, seed FA's demo data, composer install
-    docker/fa-graphql test
-    docker/fa-graphql lint      # php -l, phpcs PSR-12
-    docker/fa-graphql analyze   # PHPStan level 5
-    docker/fa-graphql ci        # all of it, from a fresh build
+    FA_DEV_MODULES="sgw_sales graphql"
+    FA_DEV_PORT=8100
+    FA_DEV_DATASET=demo
 
-    curl -H 'Content-Type: application/json' -d '{"query": "{ apiVersion }"}' \
-        http://localhost:8100/modules/graphql/
+Then, from the FrontAccounting checkout:
 
-The tasks themselves are composer scripts (`composer test`, `lint`, `cs:check`,
-`analyze`, `ci`), so they run the same on a host with its own PHP.
+    docker/ci/plugin-dev.sh --env graphql up        # config_graphql.php and the API users via tools/init.sh
+    docker/ci/plugin-dev.sh --env graphql exec --dir modules/graphql sh tools/dev-fixtures.sh
+    docker/ci/plugin-dev.sh --env graphql exec --dir modules/graphql composer test
+    docker/ci/plugin-dev.sh --env graphql mail list
+    docker/ci/plugin-dev.sh --env graphql shell
 
-### Dev fixtures
+`http://localhost:8100/modules/graphql/` in a browser shows Voyager. Sign in to
+FrontAccounting as admin/password or test/test. The API users are apitest,
+noapi and apiorders (password `password`).
 
-`docker/fa-graphql db fixtures` gives the dev stack realistic hosting-billing data —
-two service items (`HDOM` "Domain Registration", `HGEN1` "Hosting") and an example
-reseller customer with a settled invoice and an open recurring order — without
-touching `tests/data/seed.sql` or anything the test suites load. It creates the
-example documents through the GraphQL API itself; see `docker/README.md` for
-details. Idempotent, and safe to run against an already-fixtured database.
+If you used the old `docker/fa-graphql` stack, run `rm -rf docker/` in this
+checkout once you have moved: all that is left there is that stack's local
+files, such as `docker/.env`.
+
+Anorm's generator runs against the environment's database:
+
+    docker/ci/plugin-dev.sh --env graphql exec --dir modules/graphql 'php vendor/bin/anorm.php --host=localhost --user=fa --password=fa make fa_test <table> -p ...'
+
+To work on anorm-graphql at the same time, add its checkout to
+`FA_DEV_MOUNTS` (`/path/to/anorm-graphql:/opt/anorm-graphql`) when you create
+the environment, then point composer at it (locally only, never committed):
+
+    docker/ci/plugin-dev.sh --env graphql exec --dir modules/graphql 'composer config repositories.local "{\"type\": \"path\", \"url\": \"/opt/anorm-graphql\", \"options\": {\"symlink\": true}}" && composer update saygoweb/anorm-graphql'
+
+Before committing, run `composer config --unset repositories.local` and
+`composer update saygoweb/anorm-graphql`, so `composer.lock` names the
+released version again.
 
 ## Installing into FrontAccounting
 

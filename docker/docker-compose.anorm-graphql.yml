@@ -1,8 +1,0 @@
-# Added by docker/fa-graphql when ANORM_GRAPHQL_PATH is set: a checkout of
-# saygoweb/anorm-graphql on the host, mounted read-only where a composer `path`
-# repository can find it. It is how the package is consumed before it has a
-# release to require.
-services:
-  app:
-    volumes:
-      - ${ANORM_GRAPHQL_PATH}:/opt/anorm-graphql:ro

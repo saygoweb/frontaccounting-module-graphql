@@ -139,7 +139,8 @@ will not unless renamed to end in `Id` — another reason to rename.
 
 - FA turns database errors into `E_USER_ERROR` and `output_html()` swallows them:
   an endpoint can answer 200 with an empty or HTML body. Look in `tmp/errors.log`
-  (`docker/fa-graphql logs errors`).
+  (`docker/ci/plugin-dev.sh --env graphql logs errors`, run from the
+  FrontAccounting checkout).
 - `includes/session.inc` enforces `$page_security` and emits HTML; an API must
   boot FA without it, as `modules/api/session-custom.inc` does.
 - `hooks.php` is included before the session starts — no DB work in the

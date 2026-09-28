@@ -7,8 +7,12 @@ trait GraphQLClient
     private function url(): string
     {
         $url = getenv('FA_GRAPHQL_URL');
+        if ($url !== false && $url !== '') {
+            return $url;
+        }
 
-        return $url !== false && $url !== '' ? $url : 'http://localhost:8000/modules/graphql/';
+        // The FrontAccounting CI image (tools/ci.sh, plugin-dev.sh exec) sets FA_URL.
+        return rtrim((string) (getenv('FA_URL') ?: 'http://localhost'), '/') . '/modules/graphql/';
     }
 
     /**

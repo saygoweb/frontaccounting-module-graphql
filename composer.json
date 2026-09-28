@@ -68,13 +68,13 @@
         ]
     },
     "scripts-descriptions": {
-        "test": "Run the PHPUnit suite. The http tests need the module served from a FrontAccounting install - docker/fa-graphql test does that.",
+        "test": "Run the PHPUnit suite. The http tests need the module served from a FrontAccounting install - tools/ci.sh in FrontAccounting's CI image, or a plugin-dev.sh development environment, does that.",
         "lint": "php -l over every PHP file in the module, bin/fa-report and bin/fa-token included.",
         "cs:check": "Check src/, tests/, bin/fa-report and bin/fa-token against PSR-12 (phpcs.xml).",
         "cs:fix": "Fix what phpcbf can fix automatically.",
         "analyze": "Run PHPStan over src/ (phpstan.neon).",
         "generate": "anorm-graphql make with this module's options (bin/generate). Runs on the host too: bin/generate.",
         "quality": "lint, cs:check, then analyze.",
-        "ci": "quality, then test - the gates docker/fa-graphql ci runs."
+        "ci": "quality, then test - the gates tools/ci.sh runs, before its FrontAccounting checks."
     }
 }

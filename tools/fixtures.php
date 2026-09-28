@@ -2,9 +2,10 @@
 <?php
 
 /*
- * Creates the dev stack's example hosting-billing documents THROUGH THE GRAPHQL API
- * itself, signed in as apitest (tests/data/seed.sql) — the same way the panel app
- * would. Run by `docker/fa-graphql db fixtures`, inside the app container, after
+ * Creates a development environment's example hosting-billing documents THROUGH
+ * THE GRAPHQL API itself, signed in as apitest (tests/data/seed.sql) — the same way
+ * the panel app would. Run by tools/dev-fixtures.sh in a development environment
+ * (docker/ci/plugin-dev.sh in cambell-prince/frontaccounting), after
  * tests/data/dev-fixtures.sql has loaded the HDOM/HGEN1 items and their prices.
  *
  * What it creates:
@@ -21,9 +22,7 @@
  * is created again — its customer, branch, orders, invoice and payment (if any) are
  * read back and reported instead.
  *
- * Usage: php docker/fixtures.php [<graphql-url>]
- * Not reachable over HTTP: .htaccess denies everything under docker/ except through
- * index.php's own routing, which this is not.
+ * Usage: php tools/fixtures.php [<graphql-url>]
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -133,7 +132,7 @@ function report(string $url, string $token, string $customerId): void
     ], JSON_PRETTY_PRINT) . "\n");
 }
 
-$url = $argv[1] ?? (getenv('FA_GRAPHQL_URL') ?: 'http://localhost:8000/modules/graphql/');
+$url = $argv[1] ?? (getenv('FA_GRAPHQL_URL') ?: rtrim((string) (getenv('FA_URL') ?: 'http://localhost'), '/') . '/modules/graphql/');
 
 $loginResponse = gql(
     $url,

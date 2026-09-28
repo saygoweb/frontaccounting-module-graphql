@@ -4,7 +4,8 @@ node_modules/
 .vscode/
 *.zip
 *.tgz
-docker/.env
+# The old docker/fa-graphql stack's local files (docker/.env) may remain in existing checkouts.
+/docker/
 tmp/
 config_graphql.php
 

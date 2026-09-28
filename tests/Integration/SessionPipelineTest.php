@@ -17,7 +17,7 @@ class SessionPipelineTest extends ApplicationTestCase
     protected function setUp(): void
     {
         if (!is_file(Bootstrap::defaultRoot() . '/config_db.php')) {
-            $this->markTestSkipped('No FrontAccounting here; run in the docker stack.');
+            $this->markTestSkipped('No FrontAccounting here; run in the FrontAccounting CI image.');
         }
         parent::setUp();
     }

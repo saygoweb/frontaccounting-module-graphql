@@ -1,10 +1,9 @@
--- Users the suite logs in as. Loaded after the dataset by `docker/fa-graphql db load`;
+-- Users the suite logs in as. Loaded after the dataset by tests/data/seed.sh;
 -- idempotent. The 0_ prefix is rewritten on the way in when DB_PREFIX differs.
 --
 -- 91136 / 91236 are SS_GRAPHQL / SA_GRAPHQL as FrontAccounting renumbers them for
--- extension id 1: section (1 << 16) | (100 << 8), first area section | 100. The
--- docker entrypoint registers this module as extension 1. Core areas keep their
--- fixed codes (includes/access_levels.inc).
+-- extension id 1: section (1 << 16) | (100 << 8), first area section | 100. Core
+-- areas keep their fixed codes (includes/access_levels.inc).
 -- In the FrontAccounting CI image, tests/data/seed.sh rewrites both codes for
 -- the extension id graphql has there.
 

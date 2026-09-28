@@ -2,7 +2,7 @@ name: CI
 
 # Runs tools/ci.sh in the FrontAccounting CI image (cambell-prince/frontaccounting
 # docker/ci), on FrontAccounting's demo company, with sgw_sales activated
-# alongside. docker/fa-graphql stays the development stack.
+# alongside.
 
 on:
   push:

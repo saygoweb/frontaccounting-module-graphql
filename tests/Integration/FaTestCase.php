@@ -19,7 +19,7 @@ abstract class FaTestCase extends TestCase
     {
         $root = Bootstrap::defaultRoot();
         if (!is_file($root . '/config_db.php')) {
-            $this->markTestSkipped('No FrontAccounting install at ' . $root . ' — run in the docker stack.');
+            $this->markTestSkipped('No FrontAccounting install at ' . $root . ' — run in the FA CI image.');
         }
         Bootstrap::boot($root);
     }

@@ -1,9 +1,8 @@
 #!/bin/sh
 # graphql's CI. Runs inside the FrontAccounting CI image (docker/ci in
 # cambell-prince/frontaccounting), from this module's directory, on the demo
-# dataset, with sgw_sales activated alongside. It checks what docker/fa-graphql
-# ci checks against its own stack: lint, analyze, the suites, sgw_sales'
-# GraphQL suite, and the default-company report.
+# dataset, with sgw_sales activated alongside: lint, analyze, the suites,
+# sgw_sales' GraphQL suite, and the default-company report.
 set -eu
 : "${FA_ROOT:?run this inside the FrontAccounting CI image (docker/ci/plugin-test.sh)}"
 export FA_DB_PREFIX="${FA_DB_PREFIX:-0_}"
@@ -17,12 +16,7 @@ echo "==> analyze"
 composer run analyze
 
 echo "==> config and seed"
-if [ ! -f config_graphql.php ]; then
-    secret="$(php -r 'echo bin2hex(random_bytes(24));')"
-    printf "<?php\n\n/* Written by tools/ci.sh for the CI image. Not for production:\n\tsee config_graphql.example.php. */\n\nreturn array(\n    'secret' => '%s',\n    'allow_insecure_login' => true,\n    'debug' => true,\n);\n" \
-        "$secret" > config_graphql.php
-fi
-sh tests/data/seed.sh
+sh tools/init.sh
 
 echo "==> phpunit"
 # Apache creates tmp/faillog.php during activation; SessionPipelineTest's touch() with a time needs ownership.

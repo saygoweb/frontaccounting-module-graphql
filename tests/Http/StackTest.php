@@ -75,9 +75,9 @@ class StackTest extends TestCase
 
     /**
      * SA_GRAPHQL as FrontAccounting numbers it for graphql's extension id:
-     * (id << 16) | (100 << 8) | 100. docker/fa-graphql registers graphql as
-     * extension 1 (91236); the FrontAccounting CI image numbers modules in the
-     * order they are activated.
+     * (id << 16) | (100 << 8) | 100. seed.sql is written for extension 1
+     * (91236); the FrontAccounting CI image numbers modules in the order they
+     * are activated.
      */
     private function graphqlArea(): int
     {
@@ -107,9 +107,19 @@ class StackTest extends TestCase
         $this->assertSame((string) $covering, (string) $current);
     }
 
+    private function baseUrl(): string
+    {
+        $url = getenv('FA_GRAPHQL_URL');
+        if ($url !== false && $url !== '') {
+            return $url;
+        }
+
+        return rtrim((string) (getenv('FA_URL') ?: 'http://localhost'), '/') . '/modules/graphql/';
+    }
+
     public function testConfigAndSqlAreNotServed(): void
     {
-        $base = getenv('FA_GRAPHQL_URL') ?: 'http://localhost:8000/modules/graphql/';
+        $base = $this->baseUrl();
         // Files that exist from the start and for good: src/Server.php is deleted in
         // Task 4, so the directory rule is proven with vendor/ and the file rule with
         // hooks.php.
@@ -123,6 +133,8 @@ class StackTest extends TestCase
             'bin/fa-report',
             'bin/fa-token',
             'bin/generate',
+            'tools/ci.sh',
+            'tools/fixtures.php',
         ];
         foreach ($paths as $path) {
             $this->assertIs403($base . $path, $path);
@@ -139,7 +151,7 @@ class StackTest extends TestCase
         $backup = $moduleDir . '/config_graphql.php.bak';
         file_put_contents($backup, "<?php\nreturn ['secret' => 'not-a-real-secret'];\n");
         try {
-            $base = getenv('FA_GRAPHQL_URL') ?: 'http://localhost:8000/modules/graphql/';
+            $base = $this->baseUrl();
             $this->assertIs403($base . 'config_graphql.php.bak', 'config_graphql.php.bak');
         } finally {
             unlink($backup);
@@ -153,7 +165,7 @@ class StackTest extends TestCase
      */
     public function testDotFilesAndStrayFilesAreNotServed(): void
     {
-        $base = getenv('FA_GRAPHQL_URL') ?: 'http://localhost:8000/modules/graphql/';
+        $base = $this->baseUrl();
         $paths = [
             '.superpowers/sdd/2026-09-21-foundation/checkpoint-A-review.md',
             'README.md',

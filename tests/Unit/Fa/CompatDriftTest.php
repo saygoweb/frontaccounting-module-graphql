@@ -31,7 +31,7 @@ class CompatDriftTest extends TestCase
             ? self::faFile('includes/session_utils.inc')
             : self::faFile('includes/session.inc');
         if (!is_file($source)) {
-            $this->markTestSkipped('No FrontAccounting here; run in the docker stack.');
+            $this->markTestSkipped('No FrontAccounting here; run in the FrontAccounting CI image.');
         }
 
         $this->assertSame(
@@ -45,7 +45,7 @@ class CompatDriftTest extends TestCase
     {
         $errors = self::faFile('includes/errors.inc');
         if (!is_file($errors)) {
-            $this->markTestSkipped('No FrontAccounting here; run in the docker stack.');
+            $this->markTestSkipped('No FrontAccounting here; run in the FrontAccounting CI image.');
         }
         // error_handler() is only ever called from inside errors.inc itself (by
         // fa_trigger_error() and exception_handler(), both replaced), so it has no
