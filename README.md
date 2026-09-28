@@ -550,6 +550,10 @@ Then, from the FrontAccounting checkout:
 FrontAccounting as admin/password or test/test. The API users are apitest,
 noapi and apiorders (password `password`).
 
+If you used the old `docker/fa-graphql` stack, run `rm -rf docker/` in this
+checkout once you have moved: all that is left there is that stack's local
+files, such as `docker/.env`.
+
 Anorm's generator runs against the environment's database:
 
     docker/ci/plugin-dev.sh --env graphql exec --dir modules/graphql 'php vendor/bin/anorm.php --host=localhost --user=fa --password=fa make fa_test <table> -p ...'
