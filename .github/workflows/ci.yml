@@ -25,6 +25,10 @@ jobs:
       FA_REPO: ${{ matrix.fa.repo }}
       FA_REF: ${{ matrix.fa.ref }}
       COMPOSE_PROJECT_NAME: fa-graphql-ci-${{ matrix.fa.name }}-${{ matrix.php }}
+      # sgw_sales' GraphQL extension (Release 4 spec §6). Its PR is open on this
+      # branch; the image clones by branch or tag (a shallow clone cannot take a
+      # commit SHA). Switch to master once sgw_sales' PR merges.
+      SGW_SALES_REF: feature/graphql-extension
     steps:
       - uses: actions/checkout@v4
       - name: Build, boot, lint, analyze, test

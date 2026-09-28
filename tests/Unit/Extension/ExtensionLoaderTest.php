@@ -244,9 +244,9 @@ class ExtensionLoaderTest extends TestCase
     public function coreClashes(): array
     {
         return [
-            'a type field' => ['types', 'SalesOrderType', 'recurring'],
+            'a hand-written type field' => ['types', 'SalesOrderType', 'lines'],
             'a generated type field' => ['types', 'SalesOrderType', 'reference'],
-            'a create input field' => ['inputs', 'SalesOrderCreateInput', 'recurring'],
+            'a create input field' => ['inputs', 'SalesOrderCreateInput', 'lines'],
             'an update input field' => ['inputs', 'SalesOrderUpdateInput', 'lines'],
             'a root query field' => ['query', 'Query', 'apiVersion'],
             'a root mutation field' => ['mutation', 'Mutation', 'salesOrderCreate'],

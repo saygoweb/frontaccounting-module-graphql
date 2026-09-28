@@ -142,15 +142,19 @@ warn() {
 
 # A checkout of saygoweb/anorm-graphql, or of sgw_sales, on the host, mounted
 # over what the image otherwise supplies. Only when asked for: compose has no
-# conditional volumes, so each is a second file.
+# conditional volumes, so each is a second file. A relative path is taken from
+# where this script is run and made absolute: compose, run with --project-directory
+# docker/, would otherwise resolve it from docker/ and mount an empty directory.
 COMPOSE_FILES=(-f "$COMPOSE_FILE")
 if [ -n "${ANORM_GRAPHQL_PATH:-}" ]; then
     [ -d "$ANORM_GRAPHQL_PATH" ] || die "ANORM_GRAPHQL_PATH=$ANORM_GRAPHQL_PATH is not a directory"
+    ANORM_GRAPHQL_PATH="$(cd "$ANORM_GRAPHQL_PATH" && pwd)"
     export ANORM_GRAPHQL_PATH
     COMPOSE_FILES+=(-f "$DOCKER_DIR/docker-compose.anorm-graphql.yml")
 fi
 if [ -n "${SGW_SALES_PATH:-}" ]; then
     [ -d "$SGW_SALES_PATH" ] || die "SGW_SALES_PATH=$SGW_SALES_PATH is not a directory"
+    SGW_SALES_PATH="$(cd "$SGW_SALES_PATH" && pwd)"
     export SGW_SALES_PATH
     COMPOSE_FILES+=(-f "$DOCKER_DIR/docker-compose.sgw-sales.yml")
 fi
@@ -551,6 +555,29 @@ cmd_test() {
     c_exec_user composer run test -- "$@"
 }
 
+# An extension's GraphQL suites (Release 4 spec §5): modules/<name>/phpunit-graphql.xml,
+# run here, with this module's phpunit and autoloader, against the extension as it
+# is installed in this stack (the image's clone, or a host checkout bind-mounted by
+# SGW_SALES_PATH and the like). Arguments after the name reach phpunit.
+cmd_test_extension() {
+    local name="${1:-}"
+    [ -n "$name" ] || die "usage: docker/fa-graphql test-extension <name> [phpunit args]"
+    [[ "$name" =~ ^[a-z0-9_]+$ ]] || die "extension name '$name': lower-case letters, digits and _ only"
+    shift
+    ensure_running
+    require_phpunit
+    local config="$FA_DIR/modules/$name/phpunit-graphql.xml"
+    c_exec test -f "$config" || die "modules/$name has no phpunit-graphql.xml in this stack"
+    info "extension $name: $config"
+    c_exec_user php vendor/bin/phpunit -c "$config" "$@"
+}
+
+# Every installed extension that ships GraphQL suites, one name per line.
+extensions_with_suites() {
+    c_exec sh -c "cd '$FA_DIR/modules' && for f in */phpunit-graphql.xml; do [ -f \"\$f\" ] && dirname \"\$f\"; done" \
+        | grep -v '^graphql$' || true
+}
+
 # Both are composer scripts (see composer.json and phpcs.xml) so they run the
 # same way here, on a host with its own PHP, and in CI. Both gate.
 cmd_lint() {
@@ -651,6 +678,12 @@ cmd_ci() {
     cmd_lint
     cmd_analyze
     cmd_test "$@"
+    # The extensions installed in the stack, with no skips: a skipped extension test
+    # is a test that did not prove its extension still works with this module.
+    local name
+    for name in $(extensions_with_suites); do
+        cmd_test_extension "$name" --fail-on-skipped
+    done
 }
 
 cmd_info() {
@@ -735,6 +768,9 @@ Database
 
 Testing and development
   test [args]        Run the PHPUnit suite (composer test)
+  test-extension <name> [args]
+                     Run an installed extension's GraphQL suites
+                     (modules/<name>/phpunit-graphql.xml) in this stack
   lint               composer lint (php -l), then composer cs:check (PSR-12)
   analyze            PHPStan over src/ (composer analyze)
   anorm [args]       Anorm's generator, pointed at the stack's database:
@@ -799,6 +835,7 @@ case "$cmd" in
     up) cmd_up "$@" ;;
     db) cmd_db "$@" ;;
     test) cmd_test "$@" ;;
+    test-extension) cmd_test_extension "$@" ;;
     lint) cmd_lint "$@" ;;
     analyze|analyse) cmd_analyze "$@" ;;
     anorm) cmd_anorm "$@" ;;

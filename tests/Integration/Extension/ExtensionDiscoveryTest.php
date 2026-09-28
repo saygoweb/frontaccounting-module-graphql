@@ -142,7 +142,6 @@ class ExtensionDiscoveryTest extends FaTestCase
             $this->assertNotNull($type, $name);
             $fields = $type->getFields();
             $this->assertArrayHasKey('fakeNote', $fields, $name);
-            $this->assertArrayHasKey('recurring', $fields, $name);
             $this->assertArrayHasKey('lines', $fields, $name);
         }
     }
@@ -190,8 +189,14 @@ class ExtensionDiscoveryTest extends FaTestCase
     public function testWithNoExtensionRegisteredTheCoreIsNotRead(): void
     {
         $this->enter();
-        // No installed hook implements graphql_extensions (true of every company until
-        // sgw_sales does): CoreSchema would build ApiSchema for nothing.
+        // Whatever extensions this stack has installed (sgw_sales serves one), none is
+        // active here: with no hook implementing graphql_extensions, CoreSchema would
+        // build ApiSchema for nothing. Separate process: $Hooks is this test's own.
+        foreach ($GLOBALS['Hooks'] ?? [] as $name => $hooks) {
+            if (method_exists($hooks, 'graphql_extensions')) {
+                unset($GLOBALS['Hooks'][$name]);
+            }
+        }
         $this->assertSame([], $this->container->get(Extensions::class)->loaded()->names());
 
         $resolved = new \ReflectionProperty(\DI\Container::class, 'resolvedEntries');

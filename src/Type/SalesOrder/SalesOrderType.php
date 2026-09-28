@@ -9,7 +9,6 @@ use DI\Container;
 use FA\GraphQL\Extension\AcceptsContributions;
 use FA\GraphQL\Extension\ExtensibleType;
 use FA\GraphQL\Extension\Extensions;
-use FA\GraphQL\Fa\Service\RecurringSchedule;
 use FA\GraphQL\Fa\Service\SalesOrderService;
 use FA\GraphQL\Fa\Service\ServiceCall;
 use FA\GraphQL\Fa\Warnings;
@@ -33,19 +32,13 @@ class SalesOrderType extends SalesOrderTypeBase implements ExtensibleType
 
     private SalesOrderLineType $lineType;
 
-    private RecurrenceType $recurrenceType;
-
     /**
      * @param Extensions|null $extensions the request's; null (unit tests) serves the core's fields only
      */
-    public function __construct(
-        SalesOrderLineType $lineType,
-        RecurrenceType $recurrenceType,
-        ?Extensions $extensions = null
-    ) {
+    public function __construct(SalesOrderLineType $lineType, ?Extensions $extensions = null)
+    {
         // Before parent::__construct(), which calls fields().
         $this->lineType = $lineType;
-        $this->recurrenceType = $recurrenceType;
         parent::__construct();
         // The fields above are the core's; the extensions' are appended on first use.
         $this->acceptContributions($extensions);
@@ -77,14 +70,6 @@ class SalesOrderType extends SalesOrderTypeBase implements ExtensibleType
                 ->setResolver(function (array $row, $args, $context): array {
                     // A snapshot taken before a delete (Task 8) is returned as it was.
                     return $row['lines'] ?? self::linesOf((int) $row['id'], $context);
-                })
-                ->build(),
-            FieldBuilder::create('recurring', $this->recurrenceType)
-                ->setDescription('The recurring schedule, when sgw_sales is active and the order has one.')
-                ->setResolver(function (array $row, $args, $context): ?array {
-                    return array_key_exists('recurring', $row)
-                        ? $row['recurring']
-                        : $context->get(RecurringSchedule::class)->read((int) $row['id']);
                 })
                 ->build(),
         ]);
@@ -132,7 +117,6 @@ class SalesOrderType extends SalesOrderTypeBase implements ExtensibleType
         $before = [];
         foreach ($this->rowsById($context, $ids, self::VERB_DELETE) as $index => $row) {
             $row['lines'] = self::linesOf($ids[$index], $context);
-            $row['recurring'] = $context->get(RecurringSchedule::class)->read($ids[$index]);
             $before[] = $row;
         }
 

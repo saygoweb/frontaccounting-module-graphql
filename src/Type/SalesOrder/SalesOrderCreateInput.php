@@ -26,19 +26,13 @@ class SalesOrderCreateInput extends SalesOrderCreateInputBase implements Extensi
 
     private SalesOrderLineCreateInput $lineInput;
 
-    private RecurrenceInputType $recurrenceInput;
-
     /**
      * @param Extensions|null $extensions the request's; null (unit tests) serves the core's fields only
      */
-    public function __construct(
-        SalesOrderLineCreateInput $lineInput,
-        RecurrenceInputType $recurrenceInput,
-        ?Extensions $extensions = null
-    ) {
+    public function __construct(SalesOrderLineCreateInput $lineInput, ?Extensions $extensions = null)
+    {
         // Before parent::__construct(), which builds the fields.
         $this->lineInput = $lineInput;
-        $this->recurrenceInput = $recurrenceInput;
         parent::__construct();
         // The fields above are the core's; the extensions' (nullable, Release 4 spec
         // §2.5) are appended on first use.
@@ -52,10 +46,6 @@ class SalesOrderCreateInput extends SalesOrderCreateInputBase implements Extensi
         }));
         $fields[] = FieldBuilder::create('lines', Type::nonNull(Type::listOf(Type::nonNull($this->lineInput))))
             ->setDescription('At least one. A kit is expanded into its components.')
-            ->build();
-
-        $fields[] = FieldBuilder::create('recurring', $this->recurrenceInput)
-            ->setDescription('A recurring schedule. Needs the sgw_sales extension, active for the company.')
             ->build();
 
         return $fields;

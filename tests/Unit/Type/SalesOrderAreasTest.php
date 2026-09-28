@@ -4,8 +4,6 @@ namespace FA\GraphQL\Tests\Unit\Type;
 
 use DI\Container;
 use FA\GraphQL\Error\Forbidden;
-use FA\GraphQL\Type\SalesOrder\RecurrenceRepeatsType;
-use FA\GraphQL\Type\SalesOrder\RecurrenceType;
 use FA\GraphQL\Type\SalesOrder\SalesOrderType;
 use FA\GraphQL\Type\SalesOrderLine\SalesOrderLineType;
 use PHPUnit\Framework\TestCase;
@@ -102,6 +100,6 @@ class SalesOrderAreasTest extends TestCase
 
     private static function orderType(): SalesOrderType
     {
-        return new SalesOrderType(new SalesOrderLineType(), new RecurrenceType(new RecurrenceRepeatsType()));
+        return new SalesOrderType(new SalesOrderLineType());
     }
 }

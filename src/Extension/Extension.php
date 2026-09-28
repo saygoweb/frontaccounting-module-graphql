@@ -18,7 +18,7 @@ namespace FA\GraphQL\Extension;
  */
 interface Extension
 {
-    /** Unique among extensions, e.g. 'sgw_sales'. */
+    /** Unique among extensions: the FrontAccounting extension's folder name. */
     public function name(): string;
 
     /** The contract version it was built for; another major version is refused. */

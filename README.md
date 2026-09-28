@@ -19,7 +19,7 @@ areas apply; one company per request; every response is JSON.
 | Reference data | `paymentTermsList`, `taxGroupList`, `salesAreaList`, `salesmanList`, `locationList`, `shipperList`, `creditStatusList`, `currencyList`, `stockItemList`, `salesTypeList`, `bankAccountList` | — (read-only) |
 | Customers | `customerList` (with `branches`, `contacts`, `balance`), `branchList`, `contactList` | `customerCreate`/`Update`/`Delete` (create adds the default branch and contact), `branchCreate`/`Update`/`Delete`, `contactCreate`/`Update`/`Delete` |
 | Sales orders | `salesOrderList` (with `lines`, `recurring`), `salesOrderLineList` | `salesOrderCreate`/`Update` (version-checked)/`Delete` (FrontAccounting's cancel: deleted, or closed once delivered) |
-| Recurring schedules | `recurring` on sales orders (when `sgw_sales` is active) | nested `recurring` input on the order mutations |
+| Recurring schedules | `recurring` on sales orders — from the `sgw_sales` extension, when it is active for the company | nested `recurring` input on the order mutations (the same extension) |
 | Deliveries | `deliveryList`, `deliveryLineList` | `deliveryCreate` (whole or partial), `deliveryDelete` (void) |
 | Invoices | `invoiceList` (with `lines`, `total`, `outstanding`), `invoiceLineList` | `invoiceCreate` (from deliveries, or an order in one step), `invoiceDelete` (void), `invoiceEmail` (FrontAccounting's `rep107`) |
 | Payments | `customerPaymentList` (with `allocations`, `unallocated`), `allocationList` | `customerPaymentCreate` (with allocations), `customerPaymentUpdate` (reallocate), `customerPaymentDelete` (void) |
@@ -31,6 +31,20 @@ GL postings, hooks — in one transaction per mutation call; a batch is atomic.
 Not yet: recurring invoice generation (Release 4), credit notes, quotations, direct
 and prepayment invoices, accounts payable, general ledger and banking, inventory
 maintenance. See the roadmap.
+
+## Extensions
+
+Other FrontAccounting extensions can add to this API without this module knowing
+them (Release 4 spec §2): an extension answers FrontAccounting's
+`graphql_extensions` hook with an `FA\GraphQL\Extension\Extension`, and contributes
+root fields, fields on the sales order Type and inputs, and participants that write
+in the order's own transaction. Contributions are checked on every request; a
+clashing or broken extension is dropped and logged, never the whole API.
+`sgw_sales` is the first: it serves `recurring`.
+
+An extension's GraphQL tests run in this stack:
+`docker/fa-graphql test-extension <name>` runs `modules/<name>/phpunit-graphql.xml`;
+`docker/fa-graphql ci` runs every installed extension's suites.
 
 ## Calling the API
 

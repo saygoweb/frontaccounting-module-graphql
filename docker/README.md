@@ -117,6 +117,11 @@ cloned but unregistered (and its tables unloaded). `SGW_SALES_PATH`, like
 `ANORM_GRAPHQL_PATH`, bind-mounts a host checkout over the clone in the image, for
 working on both repositories at once — it needs its own `composer install --no-dev`
 (`docker/fa-graphql exec composer install --no-dev -d /var/www/html/modules/sgw_sales`).
+A relative `SGW_SALES_PATH` (or `ANORM_GRAPHQL_PATH`) is taken from where you run
+`docker/fa-graphql` and made absolute.
+`docker/fa-graphql test-extension sgw_sales` runs sgw_sales' GraphQL suites against
+whatever is mounted or cloned; CI clones `SGW_SALES_REF` (`feature/graphql-extension`
+until sgw_sales' Release 4 PR merges).
 
 ## Anorm
 
