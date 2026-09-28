@@ -535,24 +535,15 @@ activate the extension under Setup → Install/Activate Extensions, and grant
 module's tables for that company; an install activated before the machine-token
 release must be re-activated per company to get `graphql_machine_token`.
 
-**Merging and deploying Release 4.** Release 4 is two pull requests: this module's
-`feature/release-4` and `sgw_sales`' `feature/graphql-extension`. Until they merge,
-each CI pins the other's feature branch.
+**Deploying Release 4.** Release 4 spans this module and `sgw_sales` (which now
+serves recurrence and recurring invoice generation as a GraphQL extension).
 
-1. Push **both** branches before opening either PR: each CI checks out the other's
-   branch, and fails while it is missing.
-2. Merge and deploy `sgw_sales` first. That is safe on its own: this module's current
-   `main` has no extension loader, so nothing calls `graphql_extensions` (and the
-   hook's `interface_exists` guard would refuse anyway) — the extension is inert there,
-   and `main` keeps serving `recurring` itself. Keep that window short and make no
-   rhythm changes through the API during it: the old API still clears `dt_next` on one.
-3. Here, switch `.github/workflows/ci.yml`'s `SGW_SALES_REF` from
-   `feature/graphql-extension` to `master` (and its comment, and `docker/README.md`),
-   then merge and deploy this module. Deploy order follows merge order: this module
-   deployed without the new `sgw_sales` drops `recurring` from the schema.
-4. In `sgw_sales`, switch its CI's `GRAPHQL_REF` from `feature/release-4` to `main` —
-   a definite follow-up, before `feature/release-4` is deleted.
-5. Re-activate, for **each** company, `sgw_sales` (which applies its `update_1.4.sql`;
+1. Deploy `sgw_sales` first. It is inert on an older module (no extension loader), and
+   that older module keeps serving `recurring` itself; keep the window short and make
+   no rhythm changes through the API during it (the old API clears `dt_next` on one).
+2. Deploy this module. Deployed without the new `sgw_sales`, it drops `recurring` from
+   the schema.
+3. Re-activate, for **each** company, `sgw_sales` (which applies its `update_1.4.sql`;
    until then `recurring` writes are refused with `FA_REJECTED` naming the script)
    and this module.
 
