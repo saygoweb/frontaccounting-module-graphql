@@ -519,6 +519,21 @@ themselves are in `docs/superpowers/specs/` and the plans in
 | `tests/Http` | through Apache; needs the docker stack or an install (`FA_GRAPHQL_URL`) |
 | `docker/` | a throwaway FrontAccounting with this checkout plugged into it — see `docker/README.md` |
 
+## Tests
+
+CI runs `tools/ci.sh` in the FrontAccounting CI image
+([cambell-prince/frontaccounting `docker/ci`](https://github.com/cambell-prince/frontaccounting/tree/master-cp/docker/ci)),
+on FrontAccounting's demo company, with sgw_sales activated alongside. With
+that repository checked out beside this one, the same run locally is:
+
+    ../frontaccounting/docker/ci/plugin-test.sh --dataset demo \
+      --setup 'composer install --no-interaction --no-progress' \
+      --with sgw_sales=https://github.com/saygoweb/frontaccounting-module-sgw_sales.git@master \
+      . -- sh tools/ci.sh
+
+`docker/fa-graphql` remains the development stack: dev fixtures, Voyager, the
+mail listing, anorm-graphql co-development (see `docker/README.md`).
+
 ## Developing
 
     docker/fa-graphql init      # pick host ports that are free here
