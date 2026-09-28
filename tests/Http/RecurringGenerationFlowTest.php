@@ -160,6 +160,15 @@ class RecurringGenerationFlowTest extends TestCase
         $this->assertEqualsWithDelta(0.0, (float) $payment['unallocated'], 0.001);
         $this->assertEqualsWithDelta(0.0, (float) $this->invoice((string) $item['invoiceId'])['outstanding'], 0.001);
         $this->assertEqualsWithDelta(0.0, $this->balance($customer['id']), 0.001);
+
+        // Checkpoint D M-6: never pass with the email half unchecked. The billing above
+        // has been asserted; say loudly that the email was not (--fail-on-skipped fails).
+        if (!MailCatcher::available()) {
+            $this->markTestSkipped(
+                'Generated, billed once and paid; the EMAIL was NOT checked: no mail catcher'
+                . ' (' . MailCatcher::DIR . ', sendmail_path) in this stack.'
+            );
+        }
     }
 
     public function testItemsOfOneCallAreIndependent(): void

@@ -95,6 +95,12 @@ The services an extension needs to follow this module's rules: the container,
 the request's process, transaction and lock; the context makes the right thing easy,
 it does not sandbox.
 
+*(revised)* What the context hands out is `container()`, `session()` (`FaSession`),
+`mailer()` (`InvoiceMailer`), `includeFa()`, `company()` and `login()`. `Guard`,
+`ServiceCall`, `FaTransaction`, `DocumentLock`, `DateConversion` and the errors
+(`BadInput`, `FaRejected`, …) are static classes an extension uses directly, as the core
+does; the context does not carry them.
+
 ### 2.4 Participants
 
 `interface SalesOrderParticipant` — called by `SalesOrderService` inside the order's
@@ -181,10 +187,25 @@ change: with `sgw_sales` inactive for a company, `recurring` is absent from that
 company's schema rather than reading `null` and refusing input with `BAD_INPUT`
 (extensions are per company).
 
+*(revised)* A second, client-visible change from Release 2: on a rhythm change through
+the API (`repeats`, `every`, `day`/`monthDay` or `start`), `recurring.next` (`dt_next`)
+no longer clears to null. It moves forward to the new rhythm's first date on or after
+the old `dt_next` (or the new start, if later); a never-generated schedule stays null.
+Clearing it made the schedule read as never generated, so a period already billed
+became due again; moving forward keeps the period guard (the days between are left
+unbilled). The page writes whatever `dt_next` a person posts.
+
 ### 3.4 Activation
 
-`hooks_sgw_sales::activate_extension()` applies `update_1.0.sql` only; it also applies
-`update_1.4.sql` (each cut at its `# Upgrade helpers` line, as the stack does).
+`hooks_sgw_sales::activate_extension()` applied `update_1.0.sql` only; it now applies
+`update_1.0.sql` then `update_1.4.sql` (each cut at its `# Upgrade helpers` line, as the
+stack does).
+
+*(revised)* 1.4 is detected as applied by `sales_recurring.dt_next` being nullable
+(`Null = YES`). The helpers for finding duplicate schedules before it (its unique key)
+live in `sql/helpers/update_1.4-duplicates.sql`. A company activated before Release 4
+must re-activate `sgw_sales` once; until then the extension refuses `recurring` writes
+with `FA_REJECTED` naming the script.
 
 ## 4. Recurring invoice generation
 
@@ -206,7 +227,32 @@ company's schema rather than reading `null` and refusing input with `BAD_INPUT`
   - advance `dt_next` with `db_query` in the same transaction.
 
   A retry after success finds the order not due and bills nothing twice.
-- Emailing is no longer inside `generate()`. The page emails through `rep107` after
+- Emailing is no longer inside `generate()`.
+
+*(revised)* As implemented:
+
+- Signatures: `due(\DateTimeInterface $asOf, bool $all = false, ?\PDO $pdo = null)`
+  (`$all` is the page's Show All) and `generate(int $orderNo, \DateTimeInterface
+  $invoiceDate, bool $allowEarly = false)`, where `$allowEarly` is the page's Show All
+  only; the API never passes it.
+- **Closed** means the close marker the audit trail records when the order is closed
+  through `sgw_sales`' page or the API (either also ends the schedule), or, as a
+  fallback for FrontAccounting's own close, every line fully sent after more than one
+  delivery. A closed order is refused (`RecurrenceEnded`) whatever the date. Closed on
+  FrontAccounting's own page after exactly one delivery, it cannot be told from an open
+  order and stays due (a known limit, documented in `sgw_sales`' README).
+- **Ended** means `dt_end <= date`: a date on or after the end is refused. A late run
+  dated before the end may still bill the period that began before it.
+- The next date must be **strictly after** the date billed, and after the old
+  `dt_next`: a schedule that would not move on is refused (`GenerationRefused`), and a
+  period already billed is `RecurrenceNotDue`.
+- **Show All** (`$allowEarly`) bills the next due period — the one starting at
+  `dt_next`, or the start if never generated — dated `$invoiceDate`, once: at most one
+  period ahead (refused when a period after the date is billed already), and never a
+  period starting on or after `dt_end` (refused as ended, as a run on that date would).
+- A **rhythm change** through the API recomputes `dt_next` forward (§3.3), never back.
+- Further refusals: an order with nothing to deliver, a prepayment order, and `every`
+  outside 1–127. The page emails through `rep107` after
   `generate()` as before; the API uses this module's `InvoiceMailer` (§4.2).
 
 ### 4.2 API (the extension)
@@ -224,6 +270,14 @@ company's schema rather than reading `null` and refusing input with `BAD_INPUT`
     atomic batches (Release 2 spec §3.1) on purpose: a billing run over many orders
     must not be all-or-nothing.
   - Emails are sent after each item commits.
+- *(revised)* `asOf` is optional (today by default). `recurringDueList.next` is the
+  start for a never-generated schedule, else `dt_next`. The result's `error` is
+  `RecurringGenerateError {code, message, field}`, `code` one of `NOT_FOUND`
+  (`field: "orderId"`), `NOT_DUE` (not due, or the period already billed — a retry),
+  `ENDED` (closed, or ended by the date), `BAD_INPUT` (`field: "date"`: no exchange rate,
+  or a date outside an open fiscal year), `FA_REJECTED` (on hold, prepayment, nothing to
+  deliver, stock, a schedule that would not move on, FrontAccounting refusing the
+  document, or a company not yet re-activated for 1.4) and `INTERNAL` (masked).
 - The seeded "GraphQL Panel" role (machine tokens) is unchanged: it can list what is
   due only if it holds `SA_SALESTRANSVIEW` (it does) and cannot generate. A client that
   generates needs a role holding `SA_SALESDELIVERY` and `SA_SALESINVOICE`; granting
@@ -250,6 +304,11 @@ in the default company (Release 3 spec §6, the multi-company caveat).
   tag; `sgw_sales`' CI against this module's `main`.
 - The matrix stays {upstream, fork} × {PHP 7.4, 8.3}.
 
+*(revised)* Until the two PRs merge, the pins are branches, not a tag and `main`: this
+module's CI clones `sgw_sales` at `SGW_SALES_REF: feature/graphql-extension` (the image
+clones by branch or tag), and `sgw_sales`' CI checks this module out at `GRAPHQL_REF:
+feature/release-4`. After the merges they become `master` and `main` (§6).
+
 ## 6. Merge order
 
 1. This module: the contract, loader and participants, with its own recurrence still
@@ -260,6 +319,23 @@ in the default company (Release 3 spec §6, the multi-company caveat).
    `fa-report` fix, the HTTP flow, docs; pin updated.
 
 The panel sees no gap: at every step exactly one side serves `recurring`.
+
+*(revised)* Release 4 ships as two pull requests — this module's `feature/release-4`
+and `sgw_sales`' `feature/graphql-extension` — not four tagged steps:
+
+1. Push both branches before opening either PR (each CI checks out the other's branch).
+2. Merge and deploy `sgw_sales` first. It is inert against this module's current
+   `main`: `main` has no extension loader, nothing calls `graphql_extensions`, and the
+   hook's `interface_exists` guard would refuse anyway; `main` keeps serving
+   `recurring`. Keep the window short and avoid API rhythm changes in it (the old API
+   still clears `dt_next`).
+3. Switch this module's `SGW_SALES_REF` to `master`, then merge and deploy it. Deploy
+   order follows merge order: this module without the new `sgw_sales` drops `recurring`.
+4. Switch `sgw_sales`' `GRAPHQL_REF` to `main` — a definite follow-up, before
+   `feature/release-4` is deleted.
+5. Re-activate `sgw_sales` (1.4) and this module for each company. Before deploying,
+   check each company for schedules billed but with `dt_next` cleared by Release 2's
+   API (the README's operator note).
 
 ## 7. Build order
 

@@ -207,8 +207,9 @@ recurring: { start: "2026-10-01", repeats: MONTH, every: 1, day: 1 }
 `repeats` is `MONTH` (with `day`, 1–31) or `YEAR` (with `monthDay`, `"MM-DD"`).
 To end a schedule, update the order with `recurring: { …, end: "2027-09-30" }`.
 The schedule is written in the same transaction as its order: deleting the order
-deletes it, and closing the order ends it. Without `sgw_sales`, `recurring` is
-refused (`BAD_INPUT`) and always reads `null`. A recurring order keeps its
+deletes it, and closing the order ends it. Where `sgw_sales` is not active for the
+company, `recurring` is absent from that company's schema, on input and output (a
+query or input that names it fails validation as an unknown field). A recurring order keeps its
 header editable once invoices have been generated from it, and its quantities
 may drop below what was delivered, as `sgw_sales`' own page allows: each
 generated invoice raises the delivered quantity. Generating the recurring
@@ -362,9 +363,15 @@ company's schema.
 - no root field, type, type field or input field that the core or an earlier extension
   already has — on a clash the later extension is dropped whole;
 - `typeFields`/`inputFields` only on the extensible core types above;
-- contributed input fields nullable;
-- `contractVersion()` with the same major version as this module's contract;
-- an exception while registering or collecting contributions drops that extension.
+- contributed input fields nullable, and contributed type fields nullable too (root
+  query and mutation fields may be non-null);
+- field types of the right kind: output types on `typeFields` and root fields, input
+  types on `inputFields`;
+- `contractVersion()` with the same major version as this module's contract (a newer
+  minor is accepted);
+- an exception while registering or collecting contributions drops that extension;
+- a `graphql_extensions` hook that throws is logged and skipped, and the other
+  extensions still register.
 
 A participant that throws during a write is **not** isolated: it is part of the
 mutation's transaction, so the mutation fails and nothing is written. Extensions are
@@ -392,7 +399,7 @@ mutation ($in: [RecurringGenerateInput!]!) {
   recurringGenerate(input: $in) {
     orderId invoiceId deliveryId next
     email { sent recipient messages }
-    error { code message }
+    error { code message field }
   }
 }
 ```
@@ -406,9 +413,13 @@ mutation ($in: [RecurringGenerateInput!]!) {
   billing run over many orders is not all-or-nothing. This is the one exception to the
   module's atomic batches.
 - Each item's `error.code` is one of `NOT_FOUND` (no such order, or no schedule),
-  `NOT_DUE`, `ENDED`, `BAD_INPUT` (for example, no exchange rate for the date),
-  `FA_REJECTED` (FrontAccounting refused the delivery or invoice — on hold, closed
-  fiscal year, and similar) or `INTERNAL`.
+  `NOT_DUE`, `ENDED`, `BAD_INPUT` with `error.field` `"date"` (no exchange rate for
+  the date, or a date outside an open fiscal year — closed, or out of range),
+  `FA_REJECTED` (customer on hold, a prepayment order, nothing to deliver,
+  insufficient stock, a schedule whose `every` is outside 1–127 or that would not move
+  past the date, or FrontAccounting refusing the delivery or invoice) or `INTERNAL`.
+  `error.field` names the input concerned (`"date"` for a rate or fiscal-year refusal,
+  `"orderId"` with `NOT_FOUND`), and is null for the other codes.
 - `email: true` sends each invoice through FrontAccounting's `rep107` after its item
   commits, with `invoiceEmail`'s rules; a failed email leaves `error` null and the
   invoice written, with `email.sent` false and `email.messages` saying why.
@@ -523,6 +534,39 @@ activate the extension under Setup → Install/Activate Extensions, and grant
 "GraphQL API access" to the roles that should have it. Activation creates the
 module's tables for that company; an install activated before the machine-token
 release must be re-activated per company to get `graphql_machine_token`.
+
+**Merging and deploying Release 4.** Release 4 is two pull requests: this module's
+`feature/release-4` and `sgw_sales`' `feature/graphql-extension`. Until they merge,
+each CI pins the other's feature branch.
+
+1. Push **both** branches before opening either PR: each CI checks out the other's
+   branch, and fails while it is missing.
+2. Merge and deploy `sgw_sales` first. That is safe on its own: this module's current
+   `main` has no extension loader, so nothing calls `graphql_extensions` (and the
+   hook's `interface_exists` guard would refuse anyway) — the extension is inert there,
+   and `main` keeps serving `recurring` itself. Keep that window short and make no
+   rhythm changes through the API during it: the old API still clears `dt_next` on one.
+3. Here, switch `.github/workflows/ci.yml`'s `SGW_SALES_REF` from
+   `feature/graphql-extension` to `master` (and its comment, and `docker/README.md`),
+   then merge and deploy this module. Deploy order follows merge order: this module
+   deployed without the new `sgw_sales` drops `recurring` from the schema.
+4. In `sgw_sales`, switch its CI's `GRAPHQL_REF` from `feature/release-4` to `main` —
+   a definite follow-up, before `feature/release-4` is deleted.
+5. Re-activate, for **each** company, `sgw_sales` (which applies its `update_1.4.sql`;
+   until then `recurring` writes are refused with `FA_REJECTED` naming the script)
+   and this module.
+
+*Before deploying (operator check).* Release 2's API cleared `dt_next` on a rhythm
+change. A schedule so cleared after it was billed reads as never generated, and is due
+again from its start. On each company where the API changed schedules, run
+
+```sql
+SELECT sr.trans_no FROM 0_sales_recurring sr
+JOIN 0_debtor_trans dt ON dt.order_=sr.trans_no AND dt.type=10
+WHERE sr.dt_next IS NULL GROUP BY sr.trans_no;
+```
+
+(with that company's table prefix) and set `dt_next` by hand on every row it returns.
 
 **Behind a reverse proxy.** `login` enforces FrontAccounting's own failed-login
 throttle (`login_delay`, `login_max_attempts`, `tmp/faillog.php`), and that throttle

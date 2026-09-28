@@ -121,7 +121,12 @@ A relative `SGW_SALES_PATH` (or `ANORM_GRAPHQL_PATH`) is taken from where you ru
 `docker/fa-graphql` and made absolute.
 `docker/fa-graphql test-extension sgw_sales` runs sgw_sales' GraphQL suites against
 whatever is mounted or cloned; CI clones `SGW_SALES_REF` (`feature/graphql-extension`
-until sgw_sales' Release 4 PR merges).
+until sgw_sales' Release 4 PR merges). After the merges, switch the pins: this
+module's `.github/workflows/ci.yml` `SGW_SALES_REF` to `master`, and sgw_sales'
+`GRAPHQL_REF` (`feature/release-4`) to `main`. sgw_sales merges and deploys first —
+this module's `main` has no extension loader, so the extension is inert there — and
+each company then re-activates `sgw_sales` (its `update_1.4.sql`) and this module.
+See the README's *Merging and deploying Release 4*.
 
 ## Anorm
 
