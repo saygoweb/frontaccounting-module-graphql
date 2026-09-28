@@ -61,6 +61,8 @@ FrontAccounting extensions. The hook method name is a plain string: an extension
 loads none of this module's classes unless this module is serving the request, and
 an extension inactive for the company contributes nothing. A request that opens no
 company (anonymous `apiVersion`, `login` before the session) registers no extensions.
+*(revised)* The hooks are walked by `Extensions` itself with `hook_invoke_all()`'s
+gettext bracketing, so one throwing hook is logged and does not stop the others.
 
 The contract's interfaces ship in this module (`FA\GraphQL\Extension\`), loaded by
 its autoloader in the same FrontAccounting process. An extension guards its
@@ -97,7 +99,9 @@ it does not sandbox.
 `interface SalesOrderParticipant` — called by `SalesOrderService` inside the order's
 `FaTransaction`, in registration order:
 
-- `validate(array $input, int $index): void` — before any write; throws `BadInput`.
+- `validate(array $input): void` — before any write; throws `BadInput` (ServiceCall
+  adds the batch index) *(revised: SalesOrderService does not know the batch index;
+  ServiceCall::each already tags errors with it)*.
 - `isRelaxed(int $orderId, array $input): bool` — true when the order's header must
   stay editable after delivery and the delivered-quantity floor does not apply
   (replaces Release 2's `isRecurringOrder`; the core ORs the participants' answers).
@@ -110,11 +114,17 @@ write, not isolated from it (§2.5).
 ### 2.5 Loader rules
 
 Checked every request by `ExtensionLoader`; a rejected extension, or a rejected part
-of one, is dropped and logged (error log, `E_USER_WARNING`):
+of one, is dropped and logged (the PHP error log, `graphql extension <name>: <reason>;
+dropped`):
 
 - An extension may not add a root field, type name, type field or input field that
   the core or an earlier extension already has. On a clash the later extension is
-  dropped whole.
+  dropped whole, participants included. *(revised)* The loader is given the core's
+  names before any extension is accepted (`CoreSchema`: `Query`/`Mutation` field names
+  from the request's `ApiSchema`, the extensible types' own fields, the core's named
+  types) — the extensible types add contributions lazily, on first use, so this reads
+  no extension. A type name clashes only when it names a different type object:
+  reusing the core's own instance (e.g. `InvoiceEmailResult`) is not a clash.
 - `typeFields`/`inputFields` may target only types the core marks extensible:
   `SalesOrderType`, `SalesOrderCreateInput`, `SalesOrderUpdateInput`.
 - Contributed input fields must be nullable.
@@ -127,7 +137,11 @@ of one, is dropped and logged (error log, `E_USER_WARNING`):
 
 `ApiSchema` (generated entries and hand-written ones, as today) appends the loaded
 extensions' root query and mutation fields. `SalesOrderType`'s and the order inputs'
-`fields()` append registered contributions. Introspection shows what is active for the
+`fields()` append registered contributions. *(revised)* `ApiSchema` is left untouched,
+so anorm-graphql still edits its literal `fields` arrays: `SchemaAssembler` serves new
+`Query`/`Mutation` types built from the core's field configs plus the extensions', and
+returns `ApiSchema` itself when no extension adds a root field. The extensible types
+append their contributions when webonyx first reads their fields. Introspection shows what is active for the
 token's company. `apiVersion` remains the core's version; an extension's fields are
 versioned by the extension.
 

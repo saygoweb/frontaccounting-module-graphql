@@ -5,6 +5,8 @@ namespace FA\GraphQL\Fa\Service;
 use FA\GraphQL\Error\BadInput;
 use FA\GraphQL\Error\FaRejected;
 use FA\GraphQL\Error\Forbidden;
+use FA\GraphQL\Extension\Extensions;
+use FA\GraphQL\Extension\SalesOrderParticipant;
 use FA\GraphQL\Fa\DateConversion;
 
 /**
@@ -33,9 +35,24 @@ class SalesOrderService
 
     private RecurringSchedule $schedule;
 
-    public function __construct(RecurringSchedule $schedule)
+    private ?Extensions $extensions;
+
+    public function __construct(RecurringSchedule $schedule, ?Extensions $extensions = null)
     {
         $this->schedule = $schedule;
+        $this->extensions = $extensions;
+    }
+
+    /**
+     * The company's extensions that take part in order writes (Release 4 spec §2.4),
+     * in registration order. Called inside the caller's ServiceCall: whatever one
+     * throws fails the order and rolls it back.
+     *
+     * @return SalesOrderParticipant[]
+     */
+    private function participants(): array
+    {
+        return $this->extensions === null ? [] : $this->extensions->loaded()->salesOrderParticipants();
     }
 
     /**
@@ -60,6 +77,9 @@ class SalesOrderService
             // Refused before anything is written: sgw_sales absent, or a bad schedule.
             $this->schedule->assertWritable('recurring');
             RecurringSchedule::toColumns($input['recurring']);
+        }
+        foreach ($this->participants() as $participant) {
+            $participant->validate($input);
         }
 
         $cart = new \Cart(ST_SALESORDER, 0);
@@ -86,6 +106,9 @@ class SalesOrderService
         }
         if (self::given($input, 'recurring')) {
             $this->schedule->write((int) $orderNo, $input['recurring']);
+        }
+        foreach ($this->participants() as $participant) {
+            $participant->afterCreate((int) $orderNo, $input);
         }
 
         return (int) $orderNo;
@@ -501,6 +524,9 @@ class SalesOrderService
             $this->schedule->assertWritable('recurring');
             RecurringSchedule::toColumns($input['recurring']);
         }
+        foreach ($this->participants() as $participant) {
+            $participant->validate($input);
+        }
         $id = (int) $input['id'];
         OrderLock::version($id, (int) $input['version']);
         $this->assertEditable($id);
@@ -587,13 +613,22 @@ class SalesOrderService
 
     /**
      * sgw_sales keys its relaxations to its "Recurring Order" box: an order that has a
-     * schedule, or is being given one now.
+     * schedule, or is being given one now. A participant may relax an order too.
      *
      * @param array<string, mixed> $input
      */
     protected function isRecurringOrder(int $id, array $input): bool
     {
-        return self::given($input, 'recurring') || $this->schedule->read($id) !== null;
+        if (self::given($input, 'recurring') || $this->schedule->read($id) !== null) {
+            return true;
+        }
+        foreach ($this->participants() as $participant) {
+            if ($participant->isRelaxed($id, $input)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -604,16 +639,25 @@ class SalesOrderService
         if (self::given($input, 'recurring')) {
             $this->schedule->write($id, $input['recurring']);
         }
+        foreach ($this->participants() as $participant) {
+            $participant->afterUpdate($id, $input);
+        }
     }
 
     protected function afterDelete(int $id): void
     {
         $this->schedule->delete($id);
+        foreach ($this->participants() as $participant) {
+            $participant->afterDelete($id);
+        }
     }
 
     protected function afterClose(int $id): void
     {
         $this->schedule->end($id, DateConversion::fromFa(\Today()));
+        foreach ($this->participants() as $participant) {
+            $participant->afterClose($id);
+        }
     }
 
     /**

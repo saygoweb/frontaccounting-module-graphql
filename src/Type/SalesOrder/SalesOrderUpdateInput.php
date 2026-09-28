@@ -3,6 +3,9 @@
 namespace FA\GraphQL\Type\SalesOrder;
 
 use Anorm\GraphQL\Builder\FieldBuilder;
+use FA\GraphQL\Extension\AcceptsContributions;
+use FA\GraphQL\Extension\ExtensibleType;
+use FA\GraphQL\Extension\Extensions;
 use FA\GraphQL\Type\SalesOrder\Base\SalesOrderUpdateInputBase;
 use FA\GraphQL\Type\SalesOrderLine\SalesOrderLineUpdateInput;
 use GraphQL\Type\Definition\Type;
@@ -14,8 +17,10 @@ use GraphQL\Type\Definition\Type;
  * client read; the order is refused if it has changed since (Release 2 spec section
  * 4.4). lines, when given, replaces the order's lines.
  */
-class SalesOrderUpdateInput extends SalesOrderUpdateInputBase
+class SalesOrderUpdateInput extends SalesOrderUpdateInputBase implements ExtensibleType
 {
+    use AcceptsContributions;
+
     /** Set by FrontAccounting (or never written by it), never by a client. */
     public const SERVER_SET = ['transType', 'template', 'total', 'allocated', 'email'];
 
@@ -23,12 +28,21 @@ class SalesOrderUpdateInput extends SalesOrderUpdateInputBase
 
     private RecurrenceInputType $recurrenceInput;
 
-    public function __construct(SalesOrderLineUpdateInput $lineInput, RecurrenceInputType $recurrenceInput)
-    {
+    /**
+     * @param Extensions|null $extensions the request's; null (unit tests) serves the core's fields only
+     */
+    public function __construct(
+        SalesOrderLineUpdateInput $lineInput,
+        RecurrenceInputType $recurrenceInput,
+        ?Extensions $extensions = null
+    ) {
         // Before parent::__construct(), which builds the fields.
         $this->lineInput = $lineInput;
         $this->recurrenceInput = $recurrenceInput;
         parent::__construct();
+        // The fields above are the core's; the extensions' (nullable, Release 4 spec
+        // §2.5) are appended on first use.
+        $this->acceptContributions($extensions);
     }
 
     protected function fields(): array

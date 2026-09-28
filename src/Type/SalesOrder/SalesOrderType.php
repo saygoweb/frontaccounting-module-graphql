@@ -6,6 +6,9 @@ use Anorm\DataMapper;
 use Anorm\GraphQL\Builder\FieldBuilder;
 use Anorm\GraphQL\Mapper;
 use DI\Container;
+use FA\GraphQL\Extension\AcceptsContributions;
+use FA\GraphQL\Extension\ExtensibleType;
+use FA\GraphQL\Extension\Extensions;
 use FA\GraphQL\Fa\Service\RecurringSchedule;
 use FA\GraphQL\Fa\Service\SalesOrderService;
 use FA\GraphQL\Fa\Service\ServiceCall;
@@ -21,19 +24,31 @@ use GraphQL\Type\Definition\Type;
  * Read like any generated Type; written only through FrontAccounting's Cart
  * (SalesOrderService), never by ModelType's own write (Release 2 spec section 2).
  * sales_orders also holds quotations; scope() keeps the API to trans_type 30.
+ *
+ * Extensible (Release 4 spec §2.2): the company's extensions may add fields.
  */
-class SalesOrderType extends SalesOrderTypeBase
+class SalesOrderType extends SalesOrderTypeBase implements ExtensibleType
 {
+    use AcceptsContributions;
+
     private SalesOrderLineType $lineType;
 
     private RecurrenceType $recurrenceType;
 
-    public function __construct(SalesOrderLineType $lineType, RecurrenceType $recurrenceType)
-    {
+    /**
+     * @param Extensions|null $extensions the request's; null (unit tests) serves the core's fields only
+     */
+    public function __construct(
+        SalesOrderLineType $lineType,
+        RecurrenceType $recurrenceType,
+        ?Extensions $extensions = null
+    ) {
         // Before parent::__construct(), which calls fields().
         $this->lineType = $lineType;
         $this->recurrenceType = $recurrenceType;
         parent::__construct();
+        // The fields above are the core's; the extensions' are appended on first use.
+        $this->acceptContributions($extensions);
     }
 
     /**
