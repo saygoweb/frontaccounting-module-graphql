@@ -24,6 +24,7 @@ class ConfigTest extends TestCase
         $this->assertSame(2000, $config->maxComplexity);
         $this->assertSame(1048576, $config->maxBodyBytes);
         $this->assertSame(31536000, $config->machineTtlMax);
+        $this->assertTrue($config->voyager);
     }
 
     public function testMachineTtlMaxCanBeLowered(): void
@@ -115,6 +116,7 @@ class ConfigTest extends TestCase
             'allow_insecure_login' => ['allow_insecure_login'],
             'trust_proxy' => ['trust_proxy'],
             'debug' => ['debug'],
+            'voyager' => ['voyager'],
         ];
     }
 

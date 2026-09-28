@@ -47,6 +47,45 @@ class ApplicationTest extends ApplicationTestCase
         $this->assertSame('METHOD_NOT_ALLOWED', $this->json($response)['errors'][0]['extensions']['code']);
     }
 
+    public function testBrowserGetIsVoyager(): void
+    {
+        $gate = new FakeSessionGate();
+        $this->createApp($gate);
+
+        foreach (['/', '/index.php'] as $path) {
+            $response = $this->request('GET', $path, '', ['Accept' => 'text/html,application/xhtml+xml,*/*;q=0.8']);
+
+            $this->assertSame(200, $response->getStatusCode(), $path);
+            $this->assertSame('text/html; charset=utf-8', $response->getHeaderLine('Content-Type'));
+            $html = (string) $response->getBody();
+            $this->assertStringContainsString('graphql-voyager@2.1.0/dist/voyager.standalone.js', $html);
+            $this->assertStringContainsString('integrity="sha384-', $html);
+            $this->assertStringContainsString('GraphQLVoyager.renderVoyager', $html);
+        }
+        // The page is static: no FrontAccounting boot for it.
+        $this->assertSame(0, $gate->boots);
+    }
+
+    public function testGetForJsonIs405EvenWithVoyager(): void
+    {
+        $response = $this->request('GET', '/', '', ['Accept' => 'application/json']);
+
+        $this->assertSame(405, $response->getStatusCode());
+        $this->assertSame('POST', $response->getHeaderLine('Allow'));
+        $this->assertSame('METHOD_NOT_ALLOWED', $this->json($response)['errors'][0]['extensions']['code']);
+    }
+
+    public function testVoyagerOffMakesBrowserGet405(): void
+    {
+        $this->createApp(null, ['voyager' => false]);
+
+        $response = $this->request('GET', '/', '', ['Accept' => 'text/html']);
+
+        $this->assertSame(405, $response->getStatusCode());
+        $this->assertSame('POST', $response->getHeaderLine('Allow'));
+        $this->assertSame('METHOD_NOT_ALLOWED', $this->json($response)['errors'][0]['extensions']['code']);
+    }
+
     public function testUnknownPathIs404AsJson(): void
     {
         $response = $this->request('POST', '/nope', self::QUERY);
