@@ -54,7 +54,8 @@ return function (Config $config, RequestInfo $request): DI\Container {
         BodyLimitMiddleware::class => new BodyLimitMiddleware($config->maxBodyBytes),
         // The served schema: ApiSchema plus the extensions active for the company
         // (Release 4 spec §2.6). Built by GraphQLAction after the session middleware
-        // has entered the token's company.
+        // has entered the token's company. Extensions::loaded() must run before
+        // anything reads an extensible type's fields (see ExtensibleType).
         Schema::class => static function (ContainerInterface $c): Schema {
             return SchemaAssembler::build($c->get(ApiSchema::class), $c->get(Extensions::class)->loaded());
         },

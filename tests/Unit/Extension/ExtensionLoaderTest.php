@@ -334,6 +334,65 @@ class ExtensionLoaderTest extends TestCase
         $this->assertSame([], $loaded->names());
     }
 
+    /**
+     * @dataProvider wrongKinds
+     */
+    public function testAFieldOfTheWrongKindOfTypeDropsTheExtension(string $key, string $target): void
+    {
+        $input = new \GraphQL\Type\Definition\InputObjectType(['name' => 'OddInput', 'fields' => ['a' => Type::int()]]);
+        $output = new ObjectType(['name' => 'OddOutput', 'fields' => ['a' => Type::int()]]);
+        $options = $key === 'inputs'
+            ? ['inputs' => [$target => ['odd' => ['type' => $output]]]]
+            : ($key === 'types'
+                ? ['types' => [$target => ['odd' => ['type' => $input]]]]
+                : [$key => ['odd' => ['type' => Type::listOf($input)]]]);
+        $loaded = $this->load(new FakeExtension('kinds', $options));
+
+        $this->assertSame([], $loaded->names());
+        $this->assertCount(1, $this->log);
+        $this->assertStringContainsString('graphql extension kinds:', $this->log[0]);
+        $this->assertStringContainsString('.odd', $this->log[0]);
+        $this->assertStringContainsString($key === 'inputs' ? 'input type' : 'output type', $this->log[0]);
+    }
+
+    public function wrongKinds(): array
+    {
+        return [
+            'an output type on an input' => ['inputs', 'SalesOrderCreateInput'],
+            'an input type on a type' => ['types', 'SalesOrderType'],
+            'an input type on a root query field' => ['query', 'Query'],
+            'an input type on a root mutation field' => ['mutation', 'Mutation'],
+        ];
+    }
+
+    public function testANonNullFieldOnACoreTypeDropsTheExtension(): void
+    {
+        $loaded = $this->load(new FakeExtension('bold', [
+            'types' => ['SalesOrderType' => ['bold' => ['type' => Type::nonNull(Type::string())]]],
+        ]));
+
+        $this->assertSame([], $loaded->names());
+        $this->assertStringContainsString('SalesOrderType.bold', $this->log[0]);
+        $this->assertStringContainsString('nullable', $this->log[0]);
+    }
+
+    public function testANonNullRootFieldIsAllowed(): void
+    {
+        $loaded = $this->load(new FakeExtension('rooted', [
+            'query' => ['rootedHello' => ['type' => Type::nonNull(Type::string())]],
+        ]));
+
+        $this->assertSame(['rooted'], $loaded->names());
+    }
+
+    public function testATargetWhoseFieldsAreNotAnArrayDropsTheExtension(): void
+    {
+        $loaded = $this->load(new FakeExtension('flat', ['types' => ['SalesOrderType' => 'x']]));
+
+        $this->assertSame([], $loaded->names());
+        $this->assertStringContainsString("SalesOrderType's fields must be an array", $this->log[0]);
+    }
+
     public function testNoneLoadsNothing(): void
     {
         $none = LoadedExtensions::none();

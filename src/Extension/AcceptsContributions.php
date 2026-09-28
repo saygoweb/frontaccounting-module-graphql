@@ -19,7 +19,14 @@ trait AcceptsContributions
     private function acceptContributions(?Extensions $extensions): void
     {
         $core = $this->config['fields'];
-        $this->coreFields = is_array($core) ? $core : [];
+        if (is_callable($core)) {
+            $core = $core();
+        }
+        if (!is_array($core)) {
+            // Anything else would silently serve the extensions' fields alone.
+            throw new \LogicException("{$this->name}'s core fields must be an array or a thunk returning one");
+        }
+        $this->coreFields = $core;
         if ($extensions === null) {
             return;
         }

@@ -146,4 +146,56 @@ class ExtensionDiscoveryTest extends FaTestCase
             $this->assertArrayHasKey('lines', $fields, $name);
         }
     }
+
+    /**
+     * FrontAccounting's gettext domain stack (set_ext_domain(), includes/lang/gettext.inc).
+     *
+     * @return string[]
+     */
+    private static function domainStack(): array
+    {
+        return (new \ReflectionFunction('set_ext_domain'))->getStaticVariables()['domain_stack'];
+    }
+
+    public function testTheGettextDomainIsRestoredAfterEachHookEvenOneThatThrows(): void
+    {
+        $this->enter();
+        $GLOBALS['Hooks']['fake_first'] = new FakeHooks([new FakeExtension('fake_first')]);
+        $GLOBALS['Hooks']['fake_broken'] = new FakeHooks([], true);
+        $GLOBALS['Hooks']['fake_second'] = new FakeHooks([new FakeExtension('fake_second')]);
+        $before = self::domainStack();
+
+        $names = $this->container->get(Extensions::class)->loaded()->names();
+
+        $this->assertContains('fake_first', $names);
+        $this->assertContains('fake_second', $names);
+        $this->assertSame($before, self::domainStack());
+    }
+
+    public function testAHookWithNoPathLeavesTheGettextDomainAlone(): void
+    {
+        $this->enter();
+        $pathless = new FakeHooks([new FakeExtension('fake_pathless')]);
+        $pathless->path = '';
+        $GLOBALS['Hooks']['fake_pathless'] = $pathless;
+        $GLOBALS['Hooks']['fake_second'] = new FakeHooks([new FakeExtension('fake_second')]);
+        $before = self::domainStack();
+
+        $names = $this->container->get(Extensions::class)->loaded()->names();
+
+        $this->assertContains('fake_pathless', $names);
+        $this->assertSame($before, self::domainStack());
+    }
+
+    public function testWithNoExtensionRegisteredTheCoreIsNotRead(): void
+    {
+        $this->enter();
+        // No installed hook implements graphql_extensions (true of every company until
+        // sgw_sales does): CoreSchema would build ApiSchema for nothing.
+        $this->assertSame([], $this->container->get(Extensions::class)->loaded()->names());
+
+        $resolved = new \ReflectionProperty(\DI\Container::class, 'resolvedEntries');
+        $resolved->setAccessible(true);
+        $this->assertArrayNotHasKey(\FA\GraphQL\ApiSchema::class, $resolved->getValue($this->container));
+    }
 }

@@ -63,10 +63,6 @@ final class Extensions
 
     private function discover(): LoadedExtensions
     {
-        // The core's names and types, from the request's own ApiSchema, before any
-        // extension is asked: a clash with them drops the extension whole.
-        $core = CoreSchema::fromContainer($this->container);
-
         $registry = new ExtensionRegistry();
         foreach ($GLOBALS['Hooks'] as $package => $hook) {
             if (
@@ -75,17 +71,48 @@ final class Extensions
             ) {
                 continue;
             }
-            try {
-                set_ext_domain($hook->path ?? '');
-                $method = ExtensionRegistry::HOOK;
-                $hook->$method($registry, null);
-            } catch (\Throwable $e) {
-                ($this->log)("graphql extension hook $package: " . get_class($e) . ': ' . $e->getMessage()
-                    . '; its extensions were not registered');
-            }
+            $this->invoke((string) $package, $hook, $registry);
         }
-        set_ext_domain();
+        if ($registry->all() === []) {
+            // Nothing to judge: the core need not be read.
+            return LoadedExtensions::none();
+        }
+
+        // The core's names and types, from the request's own ApiSchema, before any
+        // extension is accepted (registering one reads no extensible type): a clash
+        // with them drops the extension whole.
+        $core = CoreSchema::fromContainer($this->container);
 
         return (new ExtensionLoader($this->log))->load($registry, new ExtensionContext($this->container), $core);
+    }
+
+    /**
+     * One hook's graphql_extensions(), under its own gettext domain as
+     * hook_invoke_all() brackets it: set_ext_domain() is a stack — a path pushes, no
+     * path pops — so each push is popped here, whatever the hook does, and a hook
+     * with no path pushes nothing. Nothing escapes: a throwing hook is logged.
+     */
+    private function invoke(string $package, object $hook, ExtensionRegistry $registry): void
+    {
+        $path = (string) ($hook->path ?? '');
+        try {
+            if ($path !== '') {
+                set_ext_domain($path);
+            }
+            $method = ExtensionRegistry::HOOK;
+            $hook->$method($registry, null);
+        } catch (\Throwable $e) {
+            ($this->log)("graphql extension hook $package: " . get_class($e) . ': ' . $e->getMessage()
+                . '; its extensions were not registered');
+        } finally {
+            if ($path !== '') {
+                try {
+                    set_ext_domain();
+                } catch (\Throwable $e) {
+                    ($this->log)("graphql extension hook $package: restoring the gettext domain: "
+                        . get_class($e) . ': ' . $e->getMessage());
+                }
+            }
+        }
     }
 }

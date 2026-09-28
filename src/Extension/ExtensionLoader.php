@@ -11,11 +11,12 @@ use GraphQL\Type\Definition\Type;
  * The rules an extension's contributions must meet (Release 4 spec §2.5, revised).
  * Every problem drops the extension whole, participants included, with one log line:
  * another major contract version, an exception from any of its methods, a target the
- * core does not mark extensible, a field config webonyx cannot read, a non-null input
- * field, a bad field name, a root, type or input field the core (CoreSchema) or an
- * earlier extension already has, a type under the name of a different core or
- * earlier-extension type (the same type object is fine), a participant of no known
- * kind.
+ * core does not mark extensible, a field config webonyx cannot read, a field of the
+ * wrong kind of type (an input type on an output field or the reverse), a non-null
+ * input field or type field (root fields may be non-null), a bad field name, a root,
+ * type or input field the core (CoreSchema) or an earlier extension already has, a
+ * type under the name of a different core or earlier-extension type (the same type
+ * object is fine), a participant of no known kind.
  *
  * Dropping whole matters while the core and an extension both write for one field:
  * an extension that lost its field but kept its participant would write beside the
@@ -203,11 +204,19 @@ final class ExtensionLoader
                 // A stand-in type, only to read the configs as webonyx reads them.
                 $config = ['name' => 'ExtensionContribution', 'fields' => $fields];
                 $read = $isInput ? new InputObjectType($config) : new ObjectType($config);
+                $isRoot = $target === 'Query' || $target === 'Mutation';
                 foreach ($read->getFields() as $field) {
                     $type = $field->getType();
+                    if ($isInput ? !Type::isInputType($type) : !Type::isOutputType($type)) {
+                        return "$target.{$field->name} must be of an " . ($isInput ? 'input' : 'output') . ' type';
+                    }
                     if ($isInput && $type instanceof NonNull) {
                         return "$target.{$field->name} must be nullable: "
                             . 'an extension cannot make a core input stricter';
+                    }
+                    if (!$isInput && !$isRoot && $type instanceof NonNull) {
+                        return "$target.{$field->name} must be nullable: an error in it would null "
+                            . "the whole $target";
                     }
                     $reached[] = $type;
                     if (!$isInput) {

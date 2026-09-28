@@ -31,6 +31,10 @@ interface Extension
     public function mutationFields(ExtensionContext $c): array;
 
     /** @return array<string, array<string, array<string, mixed>>> ['SalesOrderType' => [name => config]] */
+    /**
+     * Each field must be nullable: webonyx would null the whole order when a non-null
+     * field errors.
+     */
     public function typeFields(ExtensionContext $c): array;
 
     /** @return array<string, array<string, array<string, mixed>>> ['SalesOrderCreateInput' => [...], ...] */

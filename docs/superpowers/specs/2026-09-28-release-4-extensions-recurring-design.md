@@ -83,7 +83,8 @@ no runtime composer dependency between the two repositories.
   computed fields added to an extensible core type.
 - `inputFields(ExtensionContext): array` — `['SalesOrderCreateInput' => [...],
   'SalesOrderUpdateInput' => [...]]`: nullable fields added to extensible core inputs.
-- `participants(): array` — objects implementing core participant interfaces (§2.4).
+- `participants(ExtensionContext): array` — objects implementing core participant
+  interfaces (§2.4). *(revised: takes the context, like the other methods)*
 
 ### 2.3 `ExtensionContext`
 
@@ -113,8 +114,8 @@ write, not isolated from it (§2.5).
 
 ### 2.5 Loader rules
 
-Checked every request by `ExtensionLoader`; a rejected extension, or a rejected part
-of one, is dropped and logged (the PHP error log, `graphql extension <name>: <reason>;
+Checked every request by `ExtensionLoader`; a rejected extension is dropped whole
+*(revised: never a part of one)* and logged (the PHP error log, `graphql extension <name>: <reason>;
 dropped`):
 
 - An extension may not add a root field, type name, type field or input field that
@@ -127,7 +128,10 @@ dropped`):
   reusing the core's own instance (e.g. `InvoiceEmailResult`) is not a clash.
 - `typeFields`/`inputFields` may target only types the core marks extensible:
   `SalesOrderType`, `SalesOrderCreateInput`, `SalesOrderUpdateInput`.
-- Contributed input fields must be nullable.
+- Contributed input fields must be nullable. *(revised)* Contributed type fields must
+  be nullable too (a non-null one that errors would null the whole order); root fields
+  may be non-null. A field's type must be of the right kind: an input type on an
+  input field, an output type on a type or root field.
 - An unknown contract major version drops the extension.
 - An exception while registering or collecting contributions drops that extension.
 - An exception from a participant during a write is not caught by the loader; it fails
