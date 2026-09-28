@@ -21,6 +21,7 @@ final class Config
         'max_body_bytes' => 1048576,
         'fa_root' => '',
         'machine_ttl_max' => 31536000,
+        'voyager' => true,
     ];
 
     public string $secret;
@@ -36,6 +37,8 @@ final class Config
     public string $faRoot;
     /** The longest a machine token may live, in seconds (spec §3.7). */
     public int $machineTtlMax;
+    /** Serve the GraphQL Voyager schema browser on GET. */
+    public bool $voyager;
 
     private function __construct()
     {
@@ -79,7 +82,7 @@ final class Config
                 throw new ConfigException("Configuration key $key must be a positive integer.");
             }
         }
-        foreach (['allow_insecure_login', 'trust_proxy', 'debug'] as $key) {
+        foreach (['allow_insecure_login', 'trust_proxy', 'debug', 'voyager'] as $key) {
             if (!is_bool($v[$key])) {
                 throw new ConfigException("Configuration key $key must be a boolean.");
             }
@@ -98,6 +101,7 @@ final class Config
         $config->maxBodyBytes = $v['max_body_bytes'];
         $config->faRoot = (string) $v['fa_root'];
         $config->machineTtlMax = $v['machine_ttl_max'];
+        $config->voyager = $v['voyager'];
 
         return $config;
     }

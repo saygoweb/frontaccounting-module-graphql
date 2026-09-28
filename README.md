@@ -83,7 +83,23 @@ $pair = $body['data']['login'];
   token or by an earlier field — is refused `UNAUTHENTICATED` for any other. Send a
   separate request per company.
 - The module answers `POST` at its directory (or `…/index.php`). Anything else is
-  JSON too: 405 for another method, 404 for another path.
+  JSON too: 405 for another method, 404 for another path — except a browser's `GET`
+  (below).
+
+### Browsing the schema
+
+Open the module's directory in a browser — `http://localhost:8100/modules/graphql/`
+in the dev stack — and the schema is drawn by
+[GraphQL Voyager](https://github.com/graphql-kit/graphql-voyager):
+
+![GraphQL Voyager on the module's schema](docs/images/voyager.png)
+
+A `GET` whose `Accept` includes `text/html` gets the page; any other `GET` keeps the
+JSON 405. The page loads Voyager 2.1.0 from cdn.jsdelivr.net (pinned, with
+subresource integrity) and introspects the endpoint by `POST`, anonymously — so it
+shows what an anonymous client sees: the core schema, without the fields an
+extension adds once a company is open. Introspection is open whatever this page
+does; `'voyager' => false` in `config_graphql.php` only turns the page off.
 
 ### Machine tokens
 

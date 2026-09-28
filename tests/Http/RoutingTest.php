@@ -18,6 +18,32 @@ class RoutingTest extends TestCase
         $this->assertNotEmpty($response['body']['errors'][0]['message']);
     }
 
+    public function testABrowserGetIsVoyager(): void
+    {
+        $response = $this->exchange('GET', '', "Accept: text/html,application/xhtml+xml,*/*;q=0.8\r\n", null);
+
+        $this->assertSame(200, $response['status'], $response['raw']);
+        $this->assertStringStartsWith('text/html', $response['contentType']);
+        $this->assertStringContainsString('GraphQLVoyager.renderVoyager', $response['raw']);
+    }
+
+    /**
+     * What Voyager asks for: a full introspection, anonymously, inside max_depth
+     * and max_complexity.
+     */
+    public function testTheIntrospectionVoyagerSendsIsAnswered(): void
+    {
+        $response = $this->send(
+            'POST',
+            '',
+            (string) json_encode(['query' => \GraphQL\Type\Introspection::getIntrospectionQuery()])
+        );
+
+        $this->assertSame(200, $response['status'], $response['raw']);
+        $this->assertArrayNotHasKey('errors', $response['body'], $response['raw']);
+        $this->assertSame('Query', $response['body']['data']['__schema']['queryType']['name']);
+    }
+
     public function testAnUnknownPathIs404AsJson(): void
     {
         $response = $this->send('POST', 'no-such-route', '{"query":"{ apiVersion }"}');

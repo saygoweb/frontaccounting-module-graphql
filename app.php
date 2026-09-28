@@ -15,6 +15,7 @@ use FA\GraphQL\Http\BodyLimitMiddleware;
 use FA\GraphQL\Http\FaSessionMiddleware;
 use FA\GraphQL\Http\GraphQLAction;
 use FA\GraphQL\Http\JsonErrorMiddleware;
+use FA\GraphQL\Http\VoyagerAction;
 use Slim\App;
 use Slim\Factory\AppFactory;
 
@@ -28,6 +29,7 @@ return function (Container $container, string $basePath = ''): App {
     $app->post('/[index.php]', GraphQLAction::class)
         ->add(FaSessionMiddleware::class)
         ->add(AuthenticationMiddleware::class);
+    $app->get('/[index.php]', VoyagerAction::class);
 
     $app->add(BodyLimitMiddleware::class);
     $app->addRoutingMiddleware();

@@ -29,6 +29,11 @@ return array(
     // Include exception messages and traces in error responses.
     // 'debug' => false,
 
+    // A browser's GET on the endpoint shows the schema in GraphQL Voyager (loaded
+    // from cdn.jsdelivr.net). Introspection is open either way; this only turns
+    // the page off.
+    // 'voyager' => true,
+
     // 'max_depth' => 12,
     // 'max_complexity' => 2000,
     // 'max_body_bytes' => 1048576,
