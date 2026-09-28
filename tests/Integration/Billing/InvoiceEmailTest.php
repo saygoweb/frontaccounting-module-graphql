@@ -37,7 +37,7 @@ class InvoiceEmailTest extends InvoiceTestCase
     {
         parent::setUp();
         if (!MailCatcher::available()) {
-            $this->markTestSkipped('The stack mail catcher is not installed (docker/fa-graphql up --build).');
+            $this->markTestSkipped('The CI image mail catcher is not installed (/var/mail-catcher).');
         }
         $this->mailBefore = MailCatcher::files();
         $this->pdfBefore = ReportFiles::files(Bootstrap::defaultRoot());

@@ -1,8 +1,8 @@
 #!/bin/sh
 # Load seed.sql into the FrontAccounting CI image's database, with SS_GRAPHQL
 # and SA_GRAPHQL worked out from the extension id graphql has there. seed.sql
-# is written for extension 1 (91136 / 91236), as docker/fa-graphql registers
-# it; the CI image numbers modules in the order they are activated.
+# is written for extension 1 (91136 / 91236); the CI image numbers modules in
+# the order they are activated.
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
 ext="$(fa-ci-ext-id graphql)"

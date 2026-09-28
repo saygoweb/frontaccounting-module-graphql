@@ -32,7 +32,7 @@ class MachineTokenFlowTest extends TestCase
     protected function setUp(): void
     {
         if (!$this->userExists('sgwpanel')) {
-            $this->markTestSkipped('sgwpanel is not seeded: run docker/fa-graphql up (or db load).');
+            $this->markTestSkipped('sgwpanel is not seeded: run tools/init.sh (or tests/data/seed.sh).');
         }
         $this->label = 'http-test-' . bin2hex(random_bytes(4));
     }

@@ -3,7 +3,7 @@
 namespace FA\GraphQL\Tests\Support;
 
 /**
- * The stack's caught mail (docker/fa-mail-catcher). A test snapshots the files
+ * The FrontAccounting CI image's caught mail (its sendmail catcher). A test snapshots the files
  * before it sends, reads only the new ones, and deletes only those.
  */
 final class MailCatcher

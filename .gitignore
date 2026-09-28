@@ -4,7 +4,6 @@ node_modules/
 .vscode/
 *.zip
 *.tgz
-docker/.env
 tmp/
 config_graphql.php
 

@@ -32,7 +32,7 @@ class OneCompanyPerRequestTest extends ApplicationTestCase
     {
         $root = Bootstrap::defaultRoot();
         if (!is_file($root . '/config_db.php')) {
-            $this->markTestSkipped('No FrontAccounting here; run in the docker stack.');
+            $this->markTestSkipped('No FrontAccounting here; run in the FrontAccounting CI image.');
         }
         parent::setUp();
         Bootstrap::boot($root);
