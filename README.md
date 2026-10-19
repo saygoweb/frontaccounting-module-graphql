@@ -119,14 +119,18 @@ under `tmp/` that the web server can no longer write:
     # in a development environment, from the FrontAccounting checkout, prefix each with:
     #   docker/ci/plugin-dev.sh --env graphql exec --dir modules/graphql
     bin/fa-token issue  --company 0 --user sgwpanel --days 365 --label "my.saygoweb.com"
+    bin/fa-token issue  --company 0 --user sgwpanel --days 30 --label "reports" --read-only
     bin/fa-token list   --company 0
     bin/fa-token revoke --company 0 <jti>
 
-- `issue` prints the token **once**, alone on stdout (its jti and expiry go to
+- `issue` prints the token **once**, alone on stdout (its jti, expiry and scope go to
   stderr). Only its id (`jti`) is stored, in the company's `graphql_machine_token`
   table, so a lost token cannot be shown again: issue another. It refuses a lifetime
   over `machine_ttl_max`, an unknown or inactive user, and a user whose role lacks
   GraphQL API access.
+- A token issued with `--read-only` (or an OAuth connection granted *Read-only* by
+  the MCP module) carries `scp: read`: every query works, every mutation is refused
+  `FORBIDDEN` "This token is read-only." `me { scope }` says which a token is.
 - `list` shows every token of the company: jti, user, live/revoked/expired, issue
   and expiry times, when it was last used (to the minute), and its label.
 - `revoke` takes effect on the next request: every request with a machine token

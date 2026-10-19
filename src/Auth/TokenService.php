@@ -43,8 +43,12 @@ class TokenService
         return $this->config->accessTtl;
     }
 
-    public function issueAccess(int $company, string $login): string
+    /**
+     * @throws \InvalidArgumentException $scope is not 'read' or 'write'
+     */
+    public function issueAccess(int $company, string $login, string $scope = Claims::SCOPE_WRITE): string
     {
+        self::checkScope($scope);
         $now = $this->clock->now();
 
         return $this->jwt->builder()
@@ -52,6 +56,7 @@ class TokenService
             ->identifiedBy(bin2hex(random_bytes(16)))
             ->relatedTo($login)
             ->withClaim('coy', $company)
+            ->withClaim('scp', $scope)
             ->issuedAt($now)
             ->canOnlyBeUsedAfter($now)
             ->expiresAt($now->modify('+' . $this->config->accessTtl . ' seconds'))
@@ -64,10 +69,16 @@ class TokenService
      * way of MachineTokenService, which stores its jti: a machine token whose jti is
      * not stored is refused on use.
      *
-     * @throws \InvalidArgumentException $lifetime is not positive or is longer than machine_ttl_max
+     * @throws \InvalidArgumentException $lifetime is not positive or is longer than machine_ttl_max,
+     *         or $scope is not 'read' or 'write'
      */
-    public function issueMachine(int $company, string $login, int $lifetime): IssuedMachineToken
-    {
+    public function issueMachine(
+        int $company,
+        string $login,
+        int $lifetime,
+        string $scope = Claims::SCOPE_WRITE
+    ): IssuedMachineToken {
+        self::checkScope($scope);
         if ($lifetime < 1) {
             throw new \InvalidArgumentException('A machine token must live at least one second.');
         }
@@ -90,6 +101,7 @@ class TokenService
             ->relatedTo($login)
             ->withClaim('coy', $company)
             ->withClaim('typ', self::TYPE_MACHINE)
+            ->withClaim('scp', $scope)
             ->issuedAt($now)
             ->canOnlyBeUsedAfter($now)
             ->expiresAt($expires)
@@ -141,6 +153,19 @@ class TokenService
             throw new InvalidToken('The access token is missing a required claim.');
         }
 
-        return new Claims($company, $login, is_scalar($jti) ? (string) $jti : '', $expires, $machine);
+        // No scp: a token from before scopes existed, which could do everything.
+        $scope = $claims->get('scp', Claims::SCOPE_WRITE);
+        if ($scope !== Claims::SCOPE_READ && $scope !== Claims::SCOPE_WRITE) {
+            throw new InvalidToken('The access token has an unknown scope.');
+        }
+
+        return new Claims($company, $login, is_scalar($jti) ? (string) $jti : '', $expires, $machine, $scope);
+    }
+
+    private static function checkScope(string $scope): void
+    {
+        if ($scope !== Claims::SCOPE_READ && $scope !== Claims::SCOPE_WRITE) {
+            throw new \InvalidArgumentException("A token's scope is 'read' or 'write', not '$scope'.");
+        }
     }
 }

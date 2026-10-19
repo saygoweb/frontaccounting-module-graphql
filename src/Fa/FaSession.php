@@ -19,6 +19,7 @@ class FaSession implements SessionGate
     private const ONE_COMPANY = 'One company per request: send a request for each company.';
 
     private Config $config;
+    private ?Claims $claims = null;
 
     public function __construct(Config $config)
     {
@@ -104,7 +105,17 @@ class FaSession implements SessionGate
             throw new Unauthenticated('This user can no longer sign in.');
         }
 
+        $this->claims = $claims;
         $this->finish();
+    }
+
+    /**
+     * The claims last passed to enter() that signed in: null for an anonymous
+     * request, or one that signed in with a password.
+     */
+    public function claims(): ?Claims
+    {
+        return $this->claims;
     }
 
     public function loginWithPassword(int $company, string $login, string $password): void

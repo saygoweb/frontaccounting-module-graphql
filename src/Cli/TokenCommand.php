@@ -26,11 +26,14 @@ use Psr\Container\ContainerInterface;
 final class TokenCommand
 {
     public const USAGE = <<<'TXT'
-usage: fa-token issue  --company N --user LOGIN --days D --label TEXT
+usage: fa-token issue  --company N --user LOGIN --days D --label TEXT [--read-only]
        fa-token list   --company N
        fa-token revoke --company N <jti>
 
 TXT;
+
+    /** Options that are flags: present or absent, never given a value. */
+    private const FLAGS = ['read-only'];
 
     /** @var callable(): ContainerInterface */
     private $containerFactory;
@@ -97,6 +100,9 @@ TXT;
      */
     private function issue(array $options, array $positional): int
     {
+        // A flag, so not among only()'s required options.
+        $scope = isset($options['read-only']) ? Claims::SCOPE_READ : Claims::SCOPE_WRITE;
+        unset($options['read-only']);
         self::only($options, ['company', 'user', 'days', 'label'], $positional, 0);
         $company = self::number($options, 'company');
         $days = self::number($options, 'days');
@@ -126,7 +132,7 @@ TXT;
         }
 
         try {
-            $issued = $container->get(MachineTokenService::class)->issue($company, $login, $days, $label);
+            $issued = $container->get(MachineTokenService::class)->issue($company, $login, $days, $label, $scope);
         } catch (\InvalidArgumentException $e) {
             throw new Refused($e->getMessage());
         } catch (\PDOException $e) {
@@ -135,12 +141,14 @@ TXT;
 
         fwrite($this->err, sprintf(
             "Issued machine token %s for %s in company %d, expiring %s UTC.\n"
+            . "scope: %s\n"
             . "The token is on stdout and is not stored: it cannot be shown again. Keep it secret.\n"
             . "Revoke it with: fa-token revoke --company %d %s\n",
             $issued->jti,
             $login,
             $company,
             $issued->expiresAt->format('Y-m-d H:i:s'),
+            $scope,
             $company,
             $issued->jti
         ));
@@ -247,7 +255,8 @@ TXT;
     }
 
     /**
-     * `--name value` and `--name=value`; everything else positional.
+     * `--name value` and `--name=value`, or a bare `--flag` for FLAGS; everything
+     * else positional.
      *
      * @param string[] $args
      * @return array{0: string, 1: array<string, string>, 2: string[]}|null
@@ -267,8 +276,13 @@ TXT;
                 continue;
             }
             $name = substr($arg, 2);
-            if (strpos($name, '=') !== false) {
+            if (in_array($name, self::FLAGS, true)) {
+                $value = '1';
+            } elseif (strpos($name, '=') !== false) {
                 [$name, $value] = explode('=', $name, 2);
+                if (in_array($name, self::FLAGS, true)) {
+                    return null;
+                }
             } elseif ($args !== []) {
                 $value = (string) array_shift($args);
             } else {

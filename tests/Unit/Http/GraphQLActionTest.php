@@ -3,9 +3,12 @@
 namespace FA\GraphQL\Tests\Unit\Http;
 
 use DI\Container;
+use FA\GraphQL\Api\DocumentRunner;
+use FA\GraphQL\Auth\Claims;
 use FA\GraphQL\Config;
 use FA\GraphQL\Error\ErrorFormatter;
 use FA\GraphQL\Fa\Warnings;
+use FA\GraphQL\Http\AuthenticationMiddleware;
 use FA\GraphQL\Http\GraphQLAction;
 use FA\GraphQL\Http\RequestRejected;
 use GraphQL\Type\Definition\CustomScalarType;
@@ -71,8 +74,10 @@ class GraphQLActionTest extends TestCase
     private function execute(string $body, array $config = [], array $headers = []): array
     {
         $action = new GraphQLAction(
-            Config::fromArray($config + ['secret' => '0123456789abcdef0123456789abcdef']),
-            new ErrorFormatter(false),
+            new DocumentRunner(
+                Config::fromArray($config + ['secret' => '0123456789abcdef0123456789abcdef']),
+                new ErrorFormatter(false)
+            ),
             $this->container
         );
         $request = (new ServerRequestFactory())->createServerRequest('POST', '/')
@@ -223,8 +228,10 @@ class GraphQLActionTest extends TestCase
         $container->set(Schema::class, $schema);
 
         $action = new GraphQLAction(
-            Config::fromArray(['secret' => '0123456789abcdef0123456789abcdef']),
-            new ErrorFormatter(false),
+            new DocumentRunner(
+                Config::fromArray(['secret' => '0123456789abcdef0123456789abcdef']),
+                new ErrorFormatter(false)
+            ),
             $container
         );
         $request = (new ServerRequestFactory())->createServerRequest('POST', '/')
@@ -232,6 +239,26 @@ class GraphQLActionTest extends TestCase
 
         $this->expectException(\JsonException::class);
         $action($request, new Response());
+    }
+
+    public function testTheRequestsClaimsReachTheRunner(): void
+    {
+        $action = new GraphQLAction(
+            new DocumentRunner(
+                Config::fromArray(['secret' => '0123456789abcdef0123456789abcdef']),
+                new ErrorFormatter(false)
+            ),
+            $this->container
+        );
+        $claims = new Claims(0, 'admin', 'j', new \DateTimeImmutable('+1 hour'), false, Claims::SCOPE_READ);
+        $request = (new ServerRequestFactory())->createServerRequest('POST', '/')
+            ->withAttribute(AuthenticationMiddleware::CLAIMS, $claims)
+            ->withBody((new StreamFactory())->createStream('{"query": "mutation { anything }"}'));
+
+        $body = json_decode((string) $action($request, new Response())->getBody(), true);
+
+        $this->assertSame('FORBIDDEN', $body['errors'][0]['extensions']['code']);
+        $this->assertSame(DocumentRunner::READ_ONLY, $body['errors'][0]['message']);
     }
 
     public function testWarningsTravelInTopLevelExtensions(): void

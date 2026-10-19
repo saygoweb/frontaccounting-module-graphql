@@ -33,19 +33,40 @@ class MachineTokenService
      * (bin/fa-token does, through FaSession); the token is checked again, as that
      * user, on every request.
      *
-     * @throws \InvalidArgumentException bad days or label, or longer than machine_ttl_max
+     * @throws \InvalidArgumentException bad days, label or scope, or longer than machine_ttl_max
      */
-    public function issue(int $company, string $login, int $days, string $label): IssuedMachineToken
-    {
-        $label = trim($label);
-        if ($label === '' || strlen($label) > 255) {
-            throw new \InvalidArgumentException('The label must be 1 to 255 characters.');
-        }
+    public function issue(
+        int $company,
+        string $login,
+        int $days,
+        string $label,
+        string $scope = Claims::SCOPE_WRITE
+    ): IssuedMachineToken {
         if ($days < 1) {
             throw new \InvalidArgumentException('A machine token must live at least one day.');
         }
 
-        $issued = $this->tokens->issueMachine($company, $login, $days * 86400);
+        return $this->issueSeconds($company, $login, $days * 86400, $label, $scope);
+    }
+
+    /**
+     * As issue(), with the lifetime in seconds.
+     *
+     * @throws \InvalidArgumentException bad seconds, label or scope, or longer than machine_ttl_max
+     */
+    public function issueSeconds(
+        int $company,
+        string $login,
+        int $seconds,
+        string $label,
+        string $scope = Claims::SCOPE_WRITE
+    ): IssuedMachineToken {
+        $label = trim($label);
+        if ($label === '' || strlen($label) > 255) {
+            throw new \InvalidArgumentException('The label must be 1 to 255 characters.');
+        }
+
+        $issued = $this->tokens->issueMachine($company, $login, $seconds, $scope);
 
         $record = new MachineTokenRecord();
         $record->jti = $issued->jti;

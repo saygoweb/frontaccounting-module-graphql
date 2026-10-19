@@ -122,13 +122,14 @@ class MachineTokenFlowTest extends TestCase
     }
 
     /**
+     * @param string[] $extra more arguments for `issue`, such as --read-only
      * @return array{token: string, jti: string}
      */
-    private function issue(string $user = 'sgwpanel', int $days = 1): array
+    private function issue(string $user = 'sgwpanel', int $days = 1, array $extra = []): array
     {
-        $run = $this->faToken([
+        $run = $this->faToken(array_merge([
             'issue', '--company', '0', '--user', $user, '--days', (string) $days, '--label', $this->label,
-        ]);
+        ], $extra));
         $this->assertSame(0, $run->exitCode, $run->stderr . $run->stdout);
         $token = trim($run->stdout);
         $this->assertMatchesRegularExpression('/^[\w-]+\.[\w-]+\.[\w-]+$/', $token, 'stdout is the token alone');
@@ -207,6 +208,28 @@ class MachineTokenFlowTest extends TestCase
         $this->assertMatchesRegularExpression('/^' . $issued['jti'] . "\tsgwpanel\trevoked /m", $this->faToken(
             ['list', '--company', '0']
         )->stdout);
+    }
+
+    public function testReadOnlyMachineTokenQueriesButCannotMutate(): void
+    {
+        $issued = $this->issue('sgwpanel', 1, ['--read-only']);
+
+        $me = $this->gql('{ me { login scope } }', [], $issued['token']);
+        $this->assertSame(200, $me['status'], $me['raw']);
+        $this->assertSame('sgwpanel', $me['body']['data']['me']['login']);
+        $this->assertSame('read', $me['body']['data']['me']['scope']);
+
+        $out = $this->gql('mutation { tokenRevoke }', [], $issued['token']);
+        $this->assertSame('FORBIDDEN', $this->code($out), $out['raw']);
+        $this->assertSame('This token is read-only.', $out['body']['errors'][0]['message']);
+        $this->assertArrayNotHasKey('data', $out['body']);
+
+        // A write token says so.
+        $write = $this->issue();
+        $this->assertSame(
+            'write',
+            $this->gql('{ me { scope } }', [], $write['token'])['body']['data']['me']['scope']
+        );
     }
 
     public function testATokenExpiredInTheTableIs401(): void
