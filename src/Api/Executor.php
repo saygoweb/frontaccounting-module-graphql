@@ -136,6 +136,10 @@ final class Executor
         try {
             $session->loginWithPassword($company, $login, $password);
         } catch (Forbidden $e) {
+            // The password was right, so FrontAccounting signed the user in before
+            // SA_GRAPHQL was checked: a refused call leaves nobody signed in.
+            $this->openCompany($session, $company);
+
             return ['status' => 'NO_API_ACCESS', 'login' => ''];
         } catch (Unauthenticated $e) {
             return ['status' => 'BAD_CREDENTIALS', 'login' => ''];
@@ -157,7 +161,9 @@ final class Executor
      *
      * @param string $clientIp the end client's address, as execute() takes it
      * @return array{token: string, jti: string, expiresAt: int}
-     * @throws ExecutorAuthException the user may no longer use the API
+     * @param string $login matched as FrontAccounting matches a login (ignoring
+     *     case); the token and its row carry FrontAccounting's stored spelling
+     * @throws ExecutorAuthException the user is unknown or may no longer use the API
      * @throws \InvalidArgumentException a bad scope, lifetime or label
      */
     public function issueToken(
@@ -169,6 +175,14 @@ final class Executor
         string $clientIp = ''
     ): array {
         $c = $this->container($clientIp);
+        $this->openCompany($this->session($c), $company);
+        // The lookup bin/fa-token makes: the stored spelling, so `fa-token list`
+        // and the machine-token check never see two spellings of one user.
+        $user = UserModel::findByLogin($c->get(\PDO::class), $login);
+        if ($user === null) {
+            throw new ExecutorAuthException(ExecutorAuthException::UNAUTHENTICATED, 'That user does not exist.');
+        }
+        $login = (string) $user->login;
         // Becoming the user as a verified token would is what refuses an inactive
         // account or a role that lost SA_GRAPHQL since the user consented.
         $this->enterClaims($c, new Claims($company, $login, '', new \DateTimeImmutable('+1 minute')));
@@ -249,13 +263,18 @@ final class Executor
         }
     }
 
+    /**
+     * @param string $bearer the token, optionally after "Bearer " (any case) and
+     *     surrounded by whitespace
+     */
     private function enter(ContainerInterface $c, string $bearer): Claims
     {
-        if (trim($bearer) === '') {
+        $token = (string) preg_replace('/^bearer(?:\s+|$)/i', '', trim($bearer));
+        if ($token === '') {
             throw new ExecutorAuthException(ExecutorAuthException::UNAUTHENTICATED, 'A bearer token is required.');
         }
         try {
-            $claims = $c->get(Authenticator::class)->fromAuthorization('Bearer ' . $bearer);
+            $claims = $c->get(Authenticator::class)->fromAuthorization('Bearer ' . $token);
         } catch (InvalidToken $e) {
             throw new ExecutorAuthException(ExecutorAuthException::UNAUTHENTICATED, $e->getMessage(), $e);
         } catch (Forbidden $e) {

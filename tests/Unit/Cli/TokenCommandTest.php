@@ -176,4 +176,36 @@ final class TokenCommandTest extends TestCase
         $this->assertFalse($this->containerBuilt);
         $this->assertSame([], $this->repo->all());
     }
+
+    public function testAnOptionWithoutAValueSaysWhy(): void
+    {
+        $exit = $this->command()->run(
+            ['issue', '--company', '0', '--user', 'admin', '--days', '30', '--label', '--staging--']
+        );
+
+        $this->assertSame(2, $exit);
+        $err = self::read($this->err);
+        $this->assertStringStartsWith("fa-token: --label needs a value", $err);
+        $this->assertStringContainsString('--label=VALUE', $err);
+        $this->assertStringEndsWith(TokenCommand::USAGE, $err);
+        $this->assertFalse($this->containerBuilt);
+    }
+
+    public function testATrailingOptionWithoutAValueSaysWhy(): void
+    {
+        $exit = $this->command()->run(['list', '--company']);
+
+        $this->assertSame(2, $exit);
+        $this->assertStringStartsWith('fa-token: --company needs a value', self::read($this->err));
+    }
+
+    public function testAValueStartingWithDashesIsTakenWithEquals(): void
+    {
+        $exit = $this->command()->run(
+            ['issue', '--company', '0', '--user', 'admin', '--days', '1', '--label=--staging--']
+        );
+
+        $this->assertSame(0, $exit, self::read($this->err));
+        $this->assertSame('--staging--', $this->repo->all()[0]->label);
+    }
 }

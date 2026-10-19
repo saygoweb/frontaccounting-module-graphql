@@ -318,4 +318,84 @@ class ExecutorTest extends FaTestCase
         $e->issueToken(0, $this->login(), 'read', 600, $this->label, '203.0.113.8');
         $this->assertSame(['203.0.113.7', '203.0.113.8'], $seen);
     }
+
+    public function testIssueTokenUsesTheStoredSpellingOfTheLogin(): void
+    {
+        $e = $this->executor();
+        $t = $e->issueToken(0, strtoupper($this->login()), 'read', 600, $this->label);
+
+        $statement = $this->pdo()->prepare('SELECT login FROM 0_graphql_machine_token WHERE label = ?');
+        $statement->execute([$this->label]);
+        $this->assertSame([$this->login()], $statement->fetchAll(\PDO::FETCH_COLUMN));
+        $payload = json_decode((string) base64_decode(strtr(explode('.', $t['token'])[1], '-_', '+/')), true);
+        $this->assertSame($this->login(), $payload['sub']);
+        $out = $e->execute($t['token'], '{ me { login } }', [], '127.0.0.1');
+        $this->assertSame($this->login(), $out['data']['me']['login']);
+    }
+
+    public function testAnUnknownUserIsRefusedBeforeSigningIn(): void
+    {
+        try {
+            $this->executor()->issueToken(0, 'nobody-here', 'write', 600, $this->label);
+            $this->fail('expected UNAUTHENTICATED');
+        } catch (ExecutorAuthException $x) {
+            $this->assertSame(ExecutorAuthException::UNAUTHENTICATED, $x->getReason());
+            $this->assertSame('That user does not exist.', $x->getMessage());
+        }
+    }
+
+    public function testNoApiAccessLeavesNobodySignedIn(): void
+    {
+        $e = $this->executor();
+        $this->assertSame('NO_API_ACCESS', $e->authenticate(0, 'noapi', $this->password())['status']);
+
+        $user = $_SESSION['wa_current_user'];
+        $this->assertFalse((bool) $user->logged_in(), 'the refused user is not signed in');
+        $this->assertSame(0, (int) $user->user);
+        $this->assertSame(0, (int) $user->company);
+    }
+
+    /**
+     * @dataProvider bearerSpellings
+     */
+    public function testABearerPrefixAndWhitespaceAreAccepted(string $before, string $after): void
+    {
+        $e = $this->executor();
+        $t = $e->issueToken(0, $this->login(), 'read', 600, $this->label);
+        $bearer = $before . $t['token'] . $after;
+
+        $out = $e->execute($bearer, '{ me { login } }', [], '127.0.0.1');
+        $this->assertSame($this->login(), $out['data']['me']['login'], (string) json_encode($out));
+        $this->assertNotNull($e->schema($bearer)->getQueryType());
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public function bearerSpellings(): array
+    {
+        return [
+            'raw' => ['', ''],
+            'Bearer' => ['Bearer ', ''],
+            'lower case, padded' => ["  bearer  ", "\n"],
+            'upper case' => ['BEARER ', ' '],
+        ];
+    }
+
+    /**
+     * @dataProvider emptyBearers
+     */
+    public function testAnEmptyBearerAfterThePrefixIsRequired(string $bearer): void
+    {
+        $this->expectExceptionObject(new ExecutorAuthException('UNAUTHENTICATED', 'A bearer token is required.'));
+        $this->executor()->schema($bearer);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public function emptyBearers(): array
+    {
+        return ['Bearer' => ['Bearer'], 'Bearer space' => ['Bearer   '], 'padded' => [" \t "]];
+    }
 }

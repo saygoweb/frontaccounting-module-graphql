@@ -74,8 +74,11 @@ final class DocumentRunner
     }
 
     /**
-     * Whether the operation that would run is a mutation. A document that does not
-     * parse, or names no runnable operation, is left to executeQuery to report.
+     * Whether the operation that would run may be a mutation. Every operation the
+     * name could select counts (all of them when no name is given): webonyx picks
+     * the last of several with one name, so the guard fails closed rather than
+     * guess. A document that does not parse, or names no operation it has, is
+     * left to executeQuery to report.
      */
     private static function isMutation(string $query, ?string $operationName): bool
     {
@@ -84,16 +87,13 @@ final class DocumentRunner
         } catch (SyntaxError $e) {
             return false;
         }
-        $operations = [];
         foreach ($document->definitions as $definition) {
-            if ($definition instanceof OperationDefinitionNode) {
-                $operations[] = $definition;
+            if (!$definition instanceof OperationDefinitionNode) {
+                continue;
             }
-        }
-        foreach ($operations as $operation) {
-            $name = $operation->name !== null ? $operation->name->value : null;
-            if ($operationName === null ? count($operations) === 1 : $name === $operationName) {
-                return $operation->operation === 'mutation';
+            $name = $definition->name !== null ? $definition->name->value : null;
+            if (($operationName === null || $name === $operationName) && $definition->operation === 'mutation') {
+                return true;
             }
         }
 

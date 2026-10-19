@@ -62,15 +62,15 @@ TXT;
      */
     public function run(array $args): int
     {
-        $parsed = self::parse($args);
-        if ($parsed === null) {
-            fwrite($this->err, self::USAGE);
-
-            return 2;
-        }
-        [$command, $options, $positional] = $parsed;
-
         try {
+            $parsed = self::parse($args);
+            if ($parsed === null) {
+                fwrite($this->err, self::USAGE);
+
+                return 2;
+            }
+            [$command, $options, $positional] = $parsed;
+
             switch ($command) {
                 case 'issue':
                     return $this->issue($options, $positional);
@@ -260,6 +260,7 @@ TXT;
      *
      * @param string[] $args
      * @return array{0: string, 1: array<string, string>, 2: string[]}|null
+     * @throws UsageError an option that takes a value has none
      */
     private static function parse(array $args): ?array
     {
@@ -287,8 +288,10 @@ TXT;
                 // A next argument that is itself an option is not this one's value:
                 // `--label --read-only` would otherwise issue a write token.
                 $value = (string) array_shift($args);
-            } else {
+            } elseif ($name === '') {
                 return null;
+            } else {
+                throw new UsageError("--$name needs a value (use --$name=VALUE for a value starting with --).");
             }
             if ($name === '' || isset($options[$name])) {
                 return null;

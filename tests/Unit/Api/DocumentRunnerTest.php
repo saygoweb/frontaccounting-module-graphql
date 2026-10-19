@@ -77,6 +77,39 @@ final class DocumentRunnerTest extends TestCase
         $this->assertSame('FORBIDDEN', $out['errors'][0]['extensions']['code']);
     }
 
+    public function testAQueryAndAMutationSharingTheNameAreRefusedForReadToken(): void
+    {
+        // webonyx would run the last operation with the name: fail closed on any.
+        $doc = 'query A { a } mutation A { b }';
+        $out = $this->runner()->run($this->schema(), null, $doc, null, 'A', $this->claims('read'));
+        $this->assertSame(self::readOnly(), $out);
+        $this->assertSame([], $this->ran);
+    }
+
+    public function testSeveralOperationsWithoutANameIncludingAMutationAreRefusedForReadToken(): void
+    {
+        $doc = 'query { a } mutation M { b }';
+        $out = $this->runner()->run($this->schema(), null, $doc, null, null, $this->claims('read'));
+        $this->assertSame(self::readOnly(), $out);
+        $this->assertSame([], $this->ran);
+    }
+
+    public function testSeveralQueriesWithoutANameAreLeftToExecuteQuery(): void
+    {
+        $doc = 'query A { a } query B { a }';
+        $out = $this->runner()->run($this->schema(), null, $doc, null, null, $this->claims('read'));
+        $this->assertNotSame(self::readOnly(), $out);
+        $this->assertArrayHasKey('errors', $out);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function readOnly(): array
+    {
+        return ['errors' => [['message' => DocumentRunner::READ_ONLY, 'extensions' => ['code' => 'FORBIDDEN']]]];
+    }
+
     public function testMutationRunsForWriteTokenAndAnonymous(): void
     {
         $this->assertSame(

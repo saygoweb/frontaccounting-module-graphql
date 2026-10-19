@@ -360,7 +360,8 @@ serves.
 
 - `execute($bearer, $document, $variables, $clientIp, $operationName = null)` —
   runs one document as the token's holder; returns the response envelope (`data`,
-  `errors`, `extensions`) as an array.
+  `errors`, `extensions`) as an array. `$bearer` is the token itself; surrounding
+  whitespace and a leading `Bearer ` (any case) are accepted and ignored.
 - `schema($bearer)` — the schema the token's company serves: ApiSchema and its
   active extensions.
 - `companies()` — company id => name.
@@ -369,11 +370,14 @@ serves.
   spelling of it ('' unless OK). FrontAccounting's login throttle applies.
   `BAD_CREDENTIALS` means a wrong password (or the throttle); a company that cannot
   be opened (unknown, or another is open in this process) throws
-  `ExecutorAuthException` `UNAUTHENTICATED` instead.
+  `ExecutorAuthException` `UNAUTHENTICATED` instead. `NO_API_ACCESS` leaves nobody
+  signed in to FrontAccounting.
 - `issueToken($company, $login, $scope, $ttlSeconds, $label, $clientIp = '')` —
   `['token', 'jti', 'expiresAt']`: a machine token (`read` or `write`), stored and
   revocable like `bin/fa-token`'s. Throws `ExecutorAuthException` when the user may
-  no longer use the API (inactive, unknown, or the role lost `SA_GRAPHQL`).
+  no longer use the API (inactive, unknown, or the role lost `SA_GRAPHQL`). The
+  login is matched ignoring case, as `bin/fa-token` matches it; the token and its
+  row carry FrontAccounting's stored spelling.
 - `revokeToken($company, $jti)` — true only if this call revoked it.
 - `tokenIsRevoked($company, $jti)` — true for a revoked or unknown jti; expiry is
   not looked at.
