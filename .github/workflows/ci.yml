@@ -37,11 +37,9 @@ jobs:
 
   # Coverage for the README's badge: tools/coverage.sh in one cell, its Clover
   # report sent to Codecov by plugin-test.yml.
-  # TODO: @master-cp and no fa-ref once ci/plugin-coverage is merged.
   coverage:
-    uses: cambell-prince/frontaccounting/.github/workflows/plugin-test.yml@ci/plugin-coverage
+    uses: cambell-prince/frontaccounting/.github/workflows/plugin-test.yml@master-cp
     with:
-      fa-ref: ci/plugin-coverage
       fa: cp
       php: '8.3'
       dataset: demo
