@@ -1,0 +1,14 @@
+# tools/coverage.sh runs in the FrontAccounting CI image, where this checkout
+# is mounted at /var/www/html/modules/graphql: map those paths to the repo's.
+fixes:
+  - "/var/www/html/modules/graphql/::"
+
+coverage:
+  status:
+    # Report, don't gate: CI's pass/fail stays with tools/ci.sh.
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true

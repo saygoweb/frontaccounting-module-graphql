@@ -1,5 +1,8 @@
 # FrontAccounting GraphQL module
 
+[![CI](https://github.com/saygoweb/frontaccounting-module-graphql/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/saygoweb/frontaccounting-module-graphql/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/saygoweb/frontaccounting-module-graphql/branch/main/graph/badge.svg)](https://codecov.io/gh/saygoweb/frontaccounting-module-graphql)
+
 A GraphQL API for [FrontAccounting](https://frontaccounting.com/), delivered as a
 module (extension) that lives at `modules/graphql` inside a FrontAccounting tree.
 
@@ -510,7 +513,7 @@ themselves are in `docs/superpowers/specs/` and the plans in
 | `tests/Unit` | no FrontAccounting, no database, no web server |
 | `tests/Integration`, `tests/Generated` | FrontAccounting loaded in-process against its database |
 | `tests/Http` | through Apache; needs FrontAccounting's CI image or an install (`FA_GRAPHQL_URL`) |
-| `tools/` | `ci.sh` (CI), `init.sh` (config and seed), `dev-fixtures.sh` and `fixtures.php` (dev data); CLI only, denied over HTTP |
+| `tools/` | `ci.sh` (CI), `coverage.sh` (coverage for Codecov), `init.sh` (config and seed), `dev-fixtures.sh` and `fixtures.php` (dev data); CLI only, denied over HTTP |
 
 ## Tests
 
@@ -523,6 +526,13 @@ that repository checked out beside this one, the same run locally is:
       --setup 'composer install --no-interaction --no-progress' \
       --with sgw_sales=https://github.com/saygoweb/frontaccounting-module-sgw_sales.git@master \
       . -- sh tools/ci.sh
+
+Coverage, for the badge above, comes from a second CI job that runs
+`tools/coverage.sh` the same way (FrontAccounting cp, PHP 8.3) and sends
+`build/coverage.xml` to [Codecov](https://codecov.io/gh/saygoweb/frontaccounting-module-graphql).
+It measures the unit and integration suites only: the http suite's requests
+run in Apache, outside phpunit. Locally, swap `tools/ci.sh` for
+`tools/coverage.sh` in the command above; it is slow, as xdebug is.
 
 ## Development
 
