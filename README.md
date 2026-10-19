@@ -119,14 +119,18 @@ under `tmp/` that the web server can no longer write:
     # in a development environment, from the FrontAccounting checkout, prefix each with:
     #   docker/ci/plugin-dev.sh --env graphql exec --dir modules/graphql
     bin/fa-token issue  --company 0 --user sgwpanel --days 365 --label "my.saygoweb.com"
+    bin/fa-token issue  --company 0 --user sgwpanel --days 30 --label "reports" --read-only
     bin/fa-token list   --company 0
     bin/fa-token revoke --company 0 <jti>
 
-- `issue` prints the token **once**, alone on stdout (its jti and expiry go to
+- `issue` prints the token **once**, alone on stdout (its jti, expiry and scope go to
   stderr). Only its id (`jti`) is stored, in the company's `graphql_machine_token`
   table, so a lost token cannot be shown again: issue another. It refuses a lifetime
   over `machine_ttl_max`, an unknown or inactive user, and a user whose role lacks
   GraphQL API access.
+- A token issued with `--read-only` (or an OAuth connection granted *Read-only* by
+  the MCP module) carries `scp: read`: every query works, every mutation is refused
+  `FORBIDDEN` "This token is read-only." `me { scope }` says which a token is.
 - `list` shows every token of the company: jti, user, live/revoked/expired, issue
   and expiry times, when it was last used (to the minute), and its label.
 - `revoke` takes effect on the next request: every request with a machine token
@@ -342,6 +346,83 @@ $gql('mutation ($in: [CustomerPaymentCreateInput!]!) { customerPaymentCreate(inp
     $pair['accessToken']);
 ```
 
+## In-process API (Executor)
+
+Another FrontAccounting module running in the same PHP process — the MCP module
+(`modules/mcp`) first — uses this API through `FA\GraphQL\Api\Executor` rather than
+over HTTP. Every call applies exactly the rules `POST /modules/graphql/` applies:
+the bearer token is verified (a machine token is looked up in its company's
+`graphql_machine_token` table), the token's user is signed in to FrontAccounting
+and must hold GraphQL API access (`SA_GRAPHQL`), a read-only token runs no
+mutation, and the depth and complexity limits and the error formatter are the
+endpoint's own. `Executor::create()` reads the `config_graphql.php` this module
+serves.
+
+- `execute($bearer, $document, $variables, $clientIp, $operationName = null)` —
+  runs one document as the token's holder; returns the response envelope (`data`,
+  `errors`, `extensions`) as an array. `$bearer` is the token itself; surrounding
+  whitespace and a leading `Bearer ` (any case) are accepted and ignored.
+- `schema($bearer)` — the schema the token's company serves: ApiSchema and its
+  active extensions.
+- `companies()` — company id => name.
+- `authenticate($company, $login, $password, $clientIp = '')` — `['status' => OK |
+  BAD_CREDENTIALS | NO_API_ACCESS, 'login' => …]`; `login` is FrontAccounting's own
+  spelling of it ('' unless OK). FrontAccounting's login throttle applies.
+  `BAD_CREDENTIALS` means a wrong password (or the throttle); a company that cannot
+  be opened (unknown, or another is open in this process) throws
+  `ExecutorAuthException` `UNAUTHENTICATED` instead. `NO_API_ACCESS` leaves nobody
+  signed in to FrontAccounting.
+- `issueToken($company, $login, $scope, $ttlSeconds, $label, $clientIp = '')` —
+  `['token', 'jti', 'expiresAt']`: a machine token (`read` or `write`), stored and
+  revocable like `bin/fa-token`'s. Throws `ExecutorAuthException` when the user may
+  no longer use the API (inactive, unknown, or the role lost `SA_GRAPHQL`). The
+  login is matched ignoring case, as `bin/fa-token` matches it; the token and its
+  row carry FrontAccounting's stored spelling.
+- `revokeToken($company, $jti)` — true only if this call revoked it.
+- `tokenIsRevoked($company, $jti)` — true for a revoked or unknown jti; expiry is
+  not looked at.
+- `database($company)` — `['dsn', 'user', 'password', 'prefix']`: the company's
+  database connection details, for a module's own tables. The DSN is `utf8mb4` on
+  purpose: a module's tables are utf8mb4, but FrontAccounting's own data tables may
+  be latin1, so do not read or write those through it.
+
+`$clientIp` is the end client's address, as `execute()` takes it: it goes into the
+request the API sees (`RequestInfo`), which refresh-token rows record.
+Pass it to `authenticate()` and `issueToken()` too; both default to `''`, so
+contract 1.0 callers that omit it still work. `authenticate()`, `issueToken()`,
+`revokeToken()` and `tokenIsRevoked()` throw `ExecutorAuthException`
+`UNAUTHENTICATED` when their company cannot be opened.
+
+A call refused before any GraphQL runs throws `ExecutorAuthException`, whose
+`getReason()` is `UNAUTHENTICATED` (HTTP's 401: no, a bad, revoked or expired
+token, or an inactive user) or `FORBIDDEN` (HTTP's 403: no GraphQL API access).
+Errors inside a document come back in the envelope's `errors`, as over HTTP.
+
+**One company per PHP process.** FrontAccounting allows one, and so does
+`Executor`: once a call has opened a company, a call for another is refused
+`UNAUTHENTICATED`, as a second company in one HTTP request is. Each call builds a
+fresh container, so nothing is shared between calls but FrontAccounting's own
+globals.
+
+**Those globals include the host's.** A call boots FrontAccounting, which resets
+`$_SESSION` and the other superglobals it owns, and signs the token's user in to
+`$_SESSION['wa_current_user']`. A host must not rely on its own `$_SESSION` or
+FrontAccounting identity across an `Executor` call in the same request: after the
+call, FrontAccounting's access checks run as the token's user.
+
+`Executor::CONTRACT_VERSION` is `'1.0'`. A minor bump adds to the contract; a major
+bump means a breaking change, and callers should check the major version.
+
+```php
+require __DIR__ . '/../graphql/vendor/autoload.php';
+$api = \FA\GraphQL\Api\Executor::create();
+try {
+    $out = $api->execute($bearer, '{ me { login scope } }', [], $clientIp);
+} catch (\FA\GraphQL\Api\ExecutorAuthException $e) {
+    // $e->getReason(): UNAUTHENTICATED (HTTP's 401) or FORBIDDEN (HTTP's 403)
+}
+```
+
 ## Extensions
 
 Other FrontAccounting extensions can add to this API without this module knowing
@@ -508,6 +589,7 @@ themselves are in `docs/superpowers/specs/` and the plans in
 | `index.php`, `app.php`, `container.php`, `.htaccess` | the endpoint: every request under `modules/graphql/` is routed to `index.php` |
 | `src/` | `FA\GraphQL\` (PSR-4); `src/Model` and `src/Type` are largely generated by `bin/generate` |
 | `src/Extension/` | the extension contract: interfaces, registry, loader, context |
+| `src/Api/` | `Executor`, the in-process API for other modules, and `DocumentRunner`, which the endpoint and `Executor` both run documents through |
 | `sql/` | the module's tables, applied on activation |
 | `bin/` | `generate` (Types), `fa-token` (machine tokens), `fa-report` (FrontAccounting reports in a CLI child); CLI only, denied over HTTP |
 | `tests/Unit` | no FrontAccounting, no database, no web server |

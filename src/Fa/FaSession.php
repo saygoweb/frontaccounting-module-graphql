@@ -19,6 +19,7 @@ class FaSession implements SessionGate
     private const ONE_COMPANY = 'One company per request: send a request for each company.';
 
     private Config $config;
+    private ?Claims $claims = null;
 
     public function __construct(Config $config)
     {
@@ -57,6 +58,8 @@ class FaSession implements SessionGate
             throw new Unauthenticated('That company does not exist.');
         }
 
+        // A new, anonymous current_user: whatever identity the claims described is gone.
+        $this->claims = null;
         $_SESSION['wa_current_user'] = new \current_user();
         $_SESSION['wa_current_user']->set_company($company);
         set_global_connection($company);
@@ -104,7 +107,17 @@ class FaSession implements SessionGate
             throw new Unauthenticated('This user can no longer sign in.');
         }
 
+        $this->claims = $claims;
         $this->finish();
+    }
+
+    /**
+     * The claims of the identity signed in now, if enter() signed it in: null when
+     * nobody is, or a password login (or a later openCompany()) replaced it.
+     */
+    public function claims(): ?Claims
+    {
+        return $this->claims;
     }
 
     public function loginWithPassword(int $company, string $login, string $password): void

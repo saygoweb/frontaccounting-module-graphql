@@ -2,14 +2,9 @@
 
 namespace FA\GraphQL\Http;
 
-use FA\GraphQL\Config;
-use FA\GraphQL\Error\ErrorFormatter;
-use FA\GraphQL\Fa\Warnings;
-use GraphQL\GraphQL;
+use FA\GraphQL\Api\DocumentRunner;
+use FA\GraphQL\Auth\Claims;
 use GraphQL\Type\Schema;
-use GraphQL\Validator\DocumentValidator;
-use GraphQL\Validator\Rules\QueryComplexity;
-use GraphQL\Validator\Rules\QueryDepth;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -21,14 +16,12 @@ use Psr\Http\Message\ServerRequestInterface;
  */
 final class GraphQLAction
 {
-    private Config $config;
-    private ErrorFormatter $formatter;
+    private DocumentRunner $runner;
     private ContainerInterface $container;
 
-    public function __construct(Config $config, ErrorFormatter $formatter, ContainerInterface $container)
+    public function __construct(DocumentRunner $runner, ContainerInterface $container)
     {
-        $this->config = $config;
-        $this->formatter = $formatter;
+        $this->runner = $runner;
         $this->container = $container;
     }
 
@@ -42,33 +35,15 @@ final class GraphQLAction
             throw new RequestRejected(400, 'The request body must be JSON with a "query" string.');
         }
 
-        // Per request: a warning belongs to the request whose work committed.
-        Warnings::reset();
-
-        $rules = DocumentValidator::allRules();
-        $rules[QueryDepth::class] = new QueryDepth($this->config->maxDepth);
-        $rules[QueryComplexity::class] = new QueryComplexity($this->config->maxComplexity);
-
-        $result = GraphQL::executeQuery(
+        $claims = $request->getAttribute(AuthenticationMiddleware::CLAIMS);
+        $output = $this->runner->run(
             $this->container->get(Schema::class),
-            $body['query'],
-            null,
             $this->container,
+            $body['query'],
             $this->variables($body['variables'] ?? null),
             isset($body['operationName']) && is_string($body['operationName']) ? $body['operationName'] : null,
-            null,
-            $rules
+            $claims instanceof Claims ? $claims : null
         );
-        $result->setErrorFormatter($this->formatter);
-        $output = $result->toArray();
-
-        // FrontAccounting's warnings about work that committed (Release 2 spec
-        // section 3.2): the generated mutations return [<Entity>Type!]!, so they
-        // travel beside `data`, not in it.
-        $warnings = Warnings::all();
-        if ($warnings !== []) {
-            $output['extensions']['warnings'] = $warnings;
-        }
 
         // JSON_THROW_ON_ERROR: a resolver value that cannot be encoded (a raw
         // INF/NAN from a custom scalar, say) must not produce a 200 with an empty

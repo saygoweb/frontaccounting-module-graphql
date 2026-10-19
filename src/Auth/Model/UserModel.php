@@ -55,6 +55,12 @@ class UserModel extends Model
         return $user instanceof self ? $user : null;
     }
 
+    /**
+     * The user a login names, matched as FrontAccounting's own login matches it
+     * (MySQL's default collation ignores case). Its login is FrontAccounting's
+     * stored spelling: bin/fa-token and Executor::issueToken() both look a user up
+     * here and store that spelling, so one user never has two.
+     */
     public static function findByLogin(\PDO $pdo, string $login): ?self
     {
         $user = DataMapper::find(self::class, $pdo)->where('`user_id` = :login', [':login' => $login])->one();

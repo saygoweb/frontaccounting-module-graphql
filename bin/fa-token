@@ -5,7 +5,7 @@
  * Machine tokens (Foundation spec §3.7): long-lived, revocable bearer tokens for a
  * service such as a hosting panel, issued here and nowhere else.
  *
- *   bin/fa-token issue  --company N --user LOGIN --days D --label TEXT
+ *   bin/fa-token issue  --company N --user LOGIN --days D --label TEXT [--read-only]
  *   bin/fa-token list   --company N
  *   bin/fa-token revoke --company N <jti>
  *

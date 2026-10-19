@@ -209,4 +209,23 @@ class FaSessionTest extends FaTestCase
         $this->assertArrayHasKey('sgw_sales', $GLOBALS['Hooks']);
         $this->assertArrayHasKey('graphql', $GLOBALS['Hooks']);
     }
+
+    public function testAPasswordLoginForgetsTheTokenClaims(): void
+    {
+        $session = $this->session();
+        $read = new Claims(0, 'apitest', 'jti', new \DateTimeImmutable('+5 minutes'), true, Claims::SCOPE_READ);
+        $session->enter($read);
+        $this->assertSame($read, $session->claims());
+
+        $session->loginWithPassword(0, 'apitest', 'password');
+        $this->assertNull($session->claims(), 'the identity is now the password login\'s, not the token\'s');
+    }
+
+    public function testOpeningTheCompanyAgainForgetsTheTokenClaims(): void
+    {
+        $session = $this->session();
+        $session->enter($this->claims('apitest'));
+        $session->openCompany(0);
+        $this->assertNull($session->claims(), 'openCompany() signs nobody in');
+    }
 }

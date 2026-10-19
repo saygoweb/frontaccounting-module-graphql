@@ -56,6 +56,8 @@ Not started; each is its own release-sized design.
 
 ## Platform
 
+- **Executor 1.0 for in-process callers — the MCP module.** `FA\GraphQL\Api\Executor`
+  (README "In-process API (Executor)").
 - **Read-only customer access.** `SA_CUSTOMER` guards listing and writing alike, so a
   token that can list customers can also change them. A separate list area would let
   a read-only client exist.
