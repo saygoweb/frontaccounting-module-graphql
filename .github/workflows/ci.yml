@@ -34,3 +34,21 @@ jobs:
       with: |
         sgw_sales=https://github.com/saygoweb/frontaccounting-module-sgw_sales.git@master
       test: sh tools/ci.sh
+
+  # Coverage for the README's badge: tools/coverage.sh in one cell, its Clover
+  # report sent to Codecov by plugin-test.yml.
+  # TODO: @master-cp and no fa-ref once ci/plugin-coverage is merged.
+  coverage:
+    uses: cambell-prince/frontaccounting/.github/workflows/plugin-test.yml@ci/plugin-coverage
+    with:
+      fa-ref: ci/plugin-coverage
+      fa: cp
+      php: '8.3'
+      dataset: demo
+      setup: composer install --no-interaction --no-progress
+      with: |
+        sgw_sales=https://github.com/saygoweb/frontaccounting-module-sgw_sales.git@master
+      test: sh tools/coverage.sh
+      coverage: build/coverage.xml
+    secrets:
+      codecov-token: ${{ secrets.CODECOV_TOKEN }}

@@ -7,6 +7,8 @@ node_modules/
 # The old docker/fa-graphql stack's local files (docker/.env) may remain in existing checkouts.
 /docker/
 tmp/
+# tools/coverage.sh
+build/
 config_graphql.php
 
 # phpunit's test-order cache

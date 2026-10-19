@@ -21,4 +21,10 @@
 			<directory>tests/Http</directory>
 		</testsuite>
 	</testsuites>
+	<!-- Measured only when a coverage driver is loaded: tools/coverage.sh. -->
+	<coverage>
+		<include>
+			<directory suffix=".php">src</directory>
+		</include>
+	</coverage>
 </phpunit>
