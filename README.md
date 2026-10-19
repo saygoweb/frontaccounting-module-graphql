@@ -364,10 +364,13 @@ serves.
 - `schema($bearer)` — the schema the token's company serves: ApiSchema and its
   active extensions.
 - `companies()` — company id => name.
-- `authenticate($company, $login, $password)` — `['status' => OK | BAD_CREDENTIALS
-  | NO_API_ACCESS, 'login' => …]`; `login` is FrontAccounting's own spelling of
-  it ('' unless OK). FrontAccounting's login throttle applies.
-- `issueToken($company, $login, $scope, $ttlSeconds, $label)` —
+- `authenticate($company, $login, $password, $clientIp = '')` — `['status' => OK |
+  BAD_CREDENTIALS | NO_API_ACCESS, 'login' => …]`; `login` is FrontAccounting's own
+  spelling of it ('' unless OK). FrontAccounting's login throttle applies.
+  `BAD_CREDENTIALS` means a wrong password (or the throttle); a company that cannot
+  be opened (unknown, or another is open in this process) throws
+  `ExecutorAuthException` `UNAUTHENTICATED` instead.
+- `issueToken($company, $login, $scope, $ttlSeconds, $label, $clientIp = '')` —
   `['token', 'jti', 'expiresAt']`: a machine token (`read` or `write`), stored and
   revocable like `bin/fa-token`'s. Throws `ExecutorAuthException` when the user may
   no longer use the API (inactive, unknown, or the role lost `SA_GRAPHQL`).
@@ -375,7 +378,16 @@ serves.
 - `tokenIsRevoked($company, $jti)` — true for a revoked or unknown jti; expiry is
   not looked at.
 - `database($company)` — `['dsn', 'user', 'password', 'prefix']`: the company's
-  database connection details.
+  database connection details, for a module's own tables. The DSN is `utf8mb4` on
+  purpose: a module's tables are utf8mb4, but FrontAccounting's own data tables may
+  be latin1, so do not read or write those through it.
+
+`$clientIp` is the end client's address, as `execute()` takes it: it goes into the
+request the API sees (`RequestInfo`), which refresh-token rows record.
+Pass it to `authenticate()` and `issueToken()` too; both default to `''`, so
+contract 1.0 callers that omit it still work. `authenticate()`, `issueToken()`,
+`revokeToken()` and `tokenIsRevoked()` throw `ExecutorAuthException`
+`UNAUTHENTICATED` when their company cannot be opened.
 
 A call refused before any GraphQL runs throws `ExecutorAuthException`, whose
 `getReason()` is `UNAUTHENTICATED` (HTTP's 401: no, a bad, revoked or expired
@@ -387,6 +399,12 @@ Errors inside a document come back in the envelope's `errors`, as over HTTP.
 `UNAUTHENTICATED`, as a second company in one HTTP request is. Each call builds a
 fresh container, so nothing is shared between calls but FrontAccounting's own
 globals.
+
+**Those globals include the host's.** A call boots FrontAccounting, which resets
+`$_SESSION` and the other superglobals it owns, and signs the token's user in to
+`$_SESSION['wa_current_user']`. A host must not rely on its own `$_SESSION` or
+FrontAccounting identity across an `Executor` call in the same request: after the
+call, FrontAccounting's access checks run as the token's user.
 
 `Executor::CONTRACT_VERSION` is `'1.0'`. A minor bump adds to the contract; a major
 bump means a breaking change, and callers should check the major version.

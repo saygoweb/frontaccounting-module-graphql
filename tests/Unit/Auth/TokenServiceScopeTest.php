@@ -74,4 +74,13 @@ final class TokenServiceScopeTest extends TestCase
         $this->expectException(InvalidToken::class);
         $this->service()->verify($token);
     }
+
+    public function testIsValidScope(): void
+    {
+        $this->assertTrue(Claims::isValidScope(Claims::SCOPE_READ));
+        $this->assertTrue(Claims::isValidScope(Claims::SCOPE_WRITE));
+        $this->assertFalse(Claims::isValidScope('admin'));
+        $this->assertFalse(Claims::isValidScope(''));
+        $this->assertFalse(Claims::isValidScope('READ'));
+    }
 }

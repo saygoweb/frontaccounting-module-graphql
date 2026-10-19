@@ -163,4 +163,17 @@ final class TokenCommandTest extends TestCase
         $this->assertSame(2, $this->command()->run(['list', '--company', '0', '--read-only']));
         $this->assertStringContainsString('unknown option --read-only', self::read($this->err));
     }
+
+    public function testAnOptionFollowedByAnotherOptionHasNoValue(): void
+    {
+        // Taking --read-only as --label's value would issue a write token.
+        $exit = $this->command()->run(
+            ['issue', '--company', '0', '--user', 'admin', '--days', '30', '--label', '--read-only']
+        );
+
+        $this->assertSame(2, $exit);
+        $this->assertSame('', self::read($this->out));
+        $this->assertFalse($this->containerBuilt);
+        $this->assertSame([], $this->repo->all());
+    }
 }

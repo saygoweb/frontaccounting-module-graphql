@@ -8,6 +8,8 @@ use FA\GraphQL\Auth\AnormMachineTokenRepository;
 use FA\GraphQL\Auth\MachineTokenRecord;
 use FA\GraphQL\Config;
 use FA\GraphQL\Fa\CompanyContext;
+use FA\GraphQL\RequestInfo;
+use Psr\Container\ContainerInterface;
 
 /**
  * The in-process API (contract 1.0) against company 0: the seeded users apitest
@@ -243,5 +245,77 @@ class ExecutorTest extends FaTestCase
     {
         $this->expectException(ExecutorAuthException::class);
         $this->executor()->schema('nope');
+    }
+
+    public function testRevokeTokenForAnUnknownCompanyIsUnauthenticated(): void
+    {
+        $e = $this->executor();
+        $this->assertReason(ExecutorAuthException::UNAUTHENTICATED, function () use ($e): void {
+            $e->revokeToken(99, str_repeat('0', 32));
+        });
+    }
+
+    public function testTokenIsRevokedForAnUnknownCompanyIsUnauthenticated(): void
+    {
+        $e = $this->executor();
+        $this->assertReason(ExecutorAuthException::UNAUTHENTICATED, function () use ($e): void {
+            $e->tokenIsRevoked(99, str_repeat('0', 32));
+        });
+    }
+
+    public function testRevokeTokenForASecondCompanyIsUnauthenticated(): void
+    {
+        $e = $this->executor();
+        $this->assertTrue($e->tokenIsRevoked(0, str_repeat('0', 32)));   // company 0 is open
+        try {
+            $e->revokeToken(1, str_repeat('0', 32));
+            $this->fail('expected UNAUTHENTICATED');
+        } catch (ExecutorAuthException $x) {
+            $this->assertSame(ExecutorAuthException::UNAUTHENTICATED, $x->getReason());
+            $this->assertStringContainsString('One company per request', $x->getMessage());
+        }
+    }
+
+    public function testAuthenticateForAnUnknownCompanyIsUnauthenticatedNotBadCredentials(): void
+    {
+        $e = $this->executor();
+        try {
+            $e->authenticate(99, $this->login(), $this->password());
+            $this->fail('expected UNAUTHENTICATED');
+        } catch (ExecutorAuthException $x) {
+            $this->assertSame(ExecutorAuthException::UNAUTHENTICATED, $x->getReason());
+            $this->assertSame('That company does not exist.', $x->getMessage());
+        }
+    }
+
+    public function testAuthenticateForASecondCompanyIsUnauthenticatedNotBadCredentials(): void
+    {
+        $e = $this->executor();
+        $this->assertSame('OK', $e->authenticate(0, $this->login(), $this->password())['status']);
+        try {
+            $e->authenticate(1, $this->login(), $this->password());
+            $this->fail('expected UNAUTHENTICATED');
+        } catch (ExecutorAuthException $x) {
+            $this->assertSame(ExecutorAuthException::UNAUTHENTICATED, $x->getReason());
+            $this->assertStringContainsString('One company per request', $x->getMessage());
+        }
+    }
+
+    public function testAuthenticateAndIssueTokenRecordTheClientIp(): void
+    {
+        $seen = [];
+        $root = dirname(__DIR__, 2);
+        $e = new Executor(
+            Config::fromArray($this->configArray()),
+            static function (Config $config, RequestInfo $request) use (&$seen, $root): ContainerInterface {
+                $seen[] = $request->client;
+
+                return (require $root . '/container.php')($config, $request);
+            }
+        );
+
+        $this->assertSame('OK', $e->authenticate(0, $this->login(), $this->password(), '203.0.113.7')['status']);
+        $e->issueToken(0, $this->login(), 'read', 600, $this->label, '203.0.113.8');
+        $this->assertSame(['203.0.113.7', '203.0.113.8'], $seen);
     }
 }

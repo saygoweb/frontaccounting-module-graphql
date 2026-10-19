@@ -283,7 +283,9 @@ TXT;
                 if (in_array($name, self::FLAGS, true)) {
                     return null;
                 }
-            } elseif ($args !== []) {
+            } elseif ($args !== [] && strncmp((string) reset($args), '--', 2) !== 0) {
+                // A next argument that is itself an option is not this one's value:
+                // `--label --read-only` would otherwise issue a write token.
                 $value = (string) array_shift($args);
             } else {
                 return null;

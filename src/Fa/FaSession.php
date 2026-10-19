@@ -58,6 +58,8 @@ class FaSession implements SessionGate
             throw new Unauthenticated('That company does not exist.');
         }
 
+        // A new, anonymous current_user: whatever identity the claims described is gone.
+        $this->claims = null;
         $_SESSION['wa_current_user'] = new \current_user();
         $_SESSION['wa_current_user']->set_company($company);
         set_global_connection($company);
@@ -110,8 +112,8 @@ class FaSession implements SessionGate
     }
 
     /**
-     * The claims last passed to enter() that signed in: null for an anonymous
-     * request, or one that signed in with a password.
+     * The claims of the identity signed in now, if enter() signed it in: null when
+     * nobody is, or a password login (or a later openCompany()) replaced it.
      */
     public function claims(): ?Claims
     {

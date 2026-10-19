@@ -35,4 +35,12 @@ final class Claims
         $this->machine = $machine;
         $this->scope = $scope;
     }
+
+    /**
+     * Whether a scope is one this API issues and accepts: issue and verify both ask here.
+     */
+    public static function isValidScope(string $scope): bool
+    {
+        return $scope === self::SCOPE_READ || $scope === self::SCOPE_WRITE;
+    }
 }

@@ -27,6 +27,11 @@ use Psr\Container\ContainerInterface;
  * for a second company is refused UNAUTHENTICATED, as a second company is over
  * HTTP. Each call builds a fresh container, so nothing leaks between calls but
  * FrontAccounting's own globals.
+ *
+ * Those globals include the caller's: a call boots FrontAccounting (which resets
+ * $_SESSION and the other superglobals it owns) and signs the token's user in to
+ * $_SESSION['wa_current_user']. A host must not rely on its own $_SESSION or
+ * FrontAccounting identity across an Executor call in the same request.
  */
 final class Executor
 {
@@ -115,13 +120,19 @@ final class Executor
      * Check a user's password as the login mutation does (FrontAccounting's
      * throttle included).
      *
+     * @param string $clientIp the end client's address, as execute() takes it
      * @return array{status: string, login: string} status OK | BAD_CREDENTIALS |
      *     NO_API_ACCESS; login as FrontAccounting stores it ('' unless OK)
+     * @throws ExecutorAuthException UNAUTHENTICATED: the company cannot be opened
+     *     (unknown, or another company is open in this process)
      */
-    public function authenticate(int $company, string $login, string $password): array
+    public function authenticate(int $company, string $login, string $password, string $clientIp = ''): array
     {
-        $c = $this->container('');
+        $c = $this->container($clientIp);
         $session = $this->session($c);
+        // Outside the credentials check: a company that cannot be opened is not a
+        // wrong password. loginWithPassword() re-opens it, which is allowed.
+        $this->openCompany($session, $company);
         try {
             $session->loginWithPassword($company, $login, $password);
         } catch (Forbidden $e) {
@@ -144,13 +155,20 @@ final class Executor
     /**
      * Issue a machine token (stored in graphql_machine_token, revocable).
      *
+     * @param string $clientIp the end client's address, as execute() takes it
      * @return array{token: string, jti: string, expiresAt: int}
      * @throws ExecutorAuthException the user may no longer use the API
      * @throws \InvalidArgumentException a bad scope, lifetime or label
      */
-    public function issueToken(int $company, string $login, string $scope, int $ttlSeconds, string $label): array
-    {
-        $c = $this->container('');
+    public function issueToken(
+        int $company,
+        string $login,
+        string $scope,
+        int $ttlSeconds,
+        string $label,
+        string $clientIp = ''
+    ): array {
+        $c = $this->container($clientIp);
         // Becoming the user as a verified token would is what refuses an inactive
         // account or a role that lost SA_GRAPHQL since the user consented.
         $this->enterClaims($c, new Claims($company, $login, '', new \DateTimeImmutable('+1 minute')));
@@ -161,28 +179,35 @@ final class Executor
 
     /**
      * @return bool true only if this call revoked it
+     * @throws ExecutorAuthException UNAUTHENTICATED: the company cannot be opened
      */
     public function revokeToken(int $company, string $jti): bool
     {
         $c = $this->container('');
-        $this->session($c)->openCompany($company);
+        $this->openCompany($this->session($c), $company);
 
         return $c->get(MachineTokenService::class)->revoke($jti);
     }
 
     /**
      * Whether a machine token is revoked or unknown. Expiry is not looked at.
+     *
+     * @throws ExecutorAuthException UNAUTHENTICATED: the company cannot be opened
      */
     public function tokenIsRevoked(int $company, string $jti): bool
     {
         $c = $this->container('');
-        $this->session($c)->openCompany($company);
+        $this->openCompany($this->session($c), $company);
         $record = $c->get(MachineTokenRepository::class)->findByJti($jti);
 
         return $record === null || $record->revokedAt !== null;
     }
 
     /**
+     * The company's connection details, for a module's own tables. The DSN is
+     * utf8mb4 on purpose: a module's tables are utf8mb4, while FrontAccounting's
+     * data tables may be latin1, so do not read or write those through it.
+     *
      * @return array{dsn: string, user: string, password: string, prefix: string}
      * @throws \InvalidArgumentException there is no such company
      */
@@ -213,6 +238,15 @@ final class Executor
     private function session(ContainerInterface $c): FaSession
     {
         return $c->get(FaSession::class);
+    }
+
+    private function openCompany(FaSession $session, int $company): void
+    {
+        try {
+            $session->openCompany($company);
+        } catch (Unauthenticated $e) {
+            throw new ExecutorAuthException(ExecutorAuthException::UNAUTHENTICATED, $e->getMessage(), $e);
+        }
     }
 
     private function enter(ContainerInterface $c, string $bearer): Claims

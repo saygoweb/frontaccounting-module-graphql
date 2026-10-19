@@ -155,7 +155,7 @@ class TokenService
 
         // No scp: a token from before scopes existed, which could do everything.
         $scope = $claims->get('scp', Claims::SCOPE_WRITE);
-        if ($scope !== Claims::SCOPE_READ && $scope !== Claims::SCOPE_WRITE) {
+        if (!is_string($scope) || !Claims::isValidScope($scope)) {
             throw new InvalidToken('The access token has an unknown scope.');
         }
 
@@ -164,7 +164,7 @@ class TokenService
 
     private static function checkScope(string $scope): void
     {
-        if ($scope !== Claims::SCOPE_READ && $scope !== Claims::SCOPE_WRITE) {
+        if (!Claims::isValidScope($scope)) {
             throw new \InvalidArgumentException("A token's scope is 'read' or 'write', not '$scope'.");
         }
     }
