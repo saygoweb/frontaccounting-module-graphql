@@ -6,6 +6,7 @@ use FA\GraphQL\Auth\Claims;
 use FA\GraphQL\Auth\Guard;
 use FA\GraphQL\Fa\CompanyContext;
 use FA\GraphQL\Fa\FaSession;
+use FA\GraphQL\Fa\FaText;
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\Type;
 use Psr\Container\ContainerInterface;
@@ -62,12 +63,13 @@ class ViewerType extends ObjectType
         sort($areas);
         $claims = $this->container->get(FaSession::class)->claims();
 
+        // FrontAccounting's stored text, HTML-escaped as its screens stored it (FaText).
         return [
-            'login' => (string) $user->loginname,
-            'name' => (string) $user->name,
-            'email' => $user->email === '' ? null : $user->email,
+            'login' => FaText::decode((string) $user->loginname),
+            'name' => FaText::decode((string) $user->name),
+            'email' => $user->email === '' || $user->email === null ? null : FaText::decode((string) $user->email),
             'company' => CompanyContext::company(),
-            'companyName' => CompanyContext::name(),
+            'companyName' => FaText::decode(CompanyContext::name()),
             'areas' => $areas,
             'scope' => $claims !== null ? $claims->scope : Claims::SCOPE_WRITE,
         ];

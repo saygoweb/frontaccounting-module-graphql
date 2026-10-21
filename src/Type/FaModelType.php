@@ -9,7 +9,13 @@ use FA\GraphQL\Auth\Guard;
 use FA\GraphQL\Error\BadInput;
 use FA\GraphQL\Error\Forbidden;
 use FA\GraphQL\Error\NotFound;
+use FA\GraphQL\Fa\FaText;
 use FA\GraphQL\Fa\Service\IntKey;
+use GraphQL\Executor\Executor;
+use GraphQL\Type\Definition\IDType;
+use GraphQL\Type\Definition\ResolveInfo;
+use GraphQL\Type\Definition\StringType;
+use GraphQL\Type\Definition\Type;
 
 /**
  * The base every generated Type extends: bin/generate passes it to anorm-graphql as
@@ -21,6 +27,12 @@ use FA\GraphQL\Fa\Service\IntKey;
  * not declare areas() cannot be instantiated, and a verb it did not map is Forbidden.
  *
  * Models are built on the container's \PDO, which ModelType::newModel() already does.
+ *
+ * Text is served as text: FrontAccounting stores it HTML-escaped ("Clubs &amp;
+ * Charities"), so every String and ID field of every Type is decoded on the way out,
+ * whether the row or the field's own resolver supplies it, and a list's selector is
+ * escaped the same way to match it (FaText; issue #16). Fields an extension appends
+ * are its own and not wrapped.
  */
 abstract class FaModelType extends ModelType
 {
@@ -33,6 +45,72 @@ abstract class FaModelType extends ModelType
      * Set while rowsById() reads back a write's own rows: the verb of that write.
      */
     private ?string $readBackVerb = null;
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    public function __construct(array $config)
+    {
+        if (isset($config['fields']) && is_array($config['fields'])) {
+            $config['fields'] = array_map([self::class, 'decodingField'], $config['fields']);
+        }
+        parent::__construct($config);
+    }
+
+    /**
+     * A field config whose String or ID result, or list of them, is FaText::decode()d.
+     * A field given as a bare type is left alone.
+     *
+     * @param mixed $field
+     * @return mixed
+     */
+    private static function decodingField($field)
+    {
+        if (!is_array($field)) {
+            return $field;
+        }
+        $resolve = $field['resolve'] ?? null;
+        $field['resolve'] = static function ($root, array $args, $context, ResolveInfo $info) use ($resolve) {
+            $value = $resolve !== null
+                ? $resolve($root, $args, $context, $info)
+                : (Executor::getDefaultFieldResolver())($root, $args, $context, $info);
+            $named = Type::getNamedType($info->returnType);
+
+            return $named instanceof StringType || $named instanceof IDType ? self::decoded($value) : $value;
+        };
+
+        return $field;
+    }
+
+    /**
+     * @param mixed $value
+     * @return mixed
+     */
+    private static function decoded($value)
+    {
+        if (is_string($value)) {
+            return FaText::decode($value);
+        }
+        if (is_array($value)) {
+            return array_map([self::class, 'decoded'], $value);
+        }
+
+        return $value;
+    }
+
+    /**
+     * The generated list, with each string in the selector escaped as FrontAccounting
+     * stores text, so a client matches what it reads: {"description": "Clubs &
+     * Charities"} finds "Clubs &amp; Charities".
+     */
+    public function resolveList($root, $args, Container $context): array
+    {
+        if (isset($args['query']['selector']) && is_string($args['query']['selector'])) {
+            $args['query']['selector'] = FaText::encodeSelector($args['query']['selector']);
+        }
+
+        return parent::resolveList($root, $args, $context);
+    }
 
     protected function authorize(string $verb, ?Model $model, Container $context): void
     {
