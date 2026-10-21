@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "df9435a5bed23392adccfba002c4de77",
+    "content-hash": "95d3bff1439e9e49b876cb852382e77c",
     "packages": [
         {
             "name": "fig/http-message-util",
@@ -898,16 +898,16 @@
         },
         {
             "name": "saygoweb/anorm-graphql",
-            "version": "v0.3.0",
+            "version": "v0.3.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/saygoweb/anorm-graphql.git",
-                "reference": "1eb12506f3a224fbb85778335b5b107a38361d4b"
+                "reference": "7f7e7586b81ac3c6c2f4a088225fc34817cde115"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/saygoweb/anorm-graphql/zipball/1eb12506f3a224fbb85778335b5b107a38361d4b",
-                "reference": "1eb12506f3a224fbb85778335b5b107a38361d4b",
+                "url": "https://api.github.com/repos/saygoweb/anorm-graphql/zipball/7f7e7586b81ac3c6c2f4a088225fc34817cde115",
+                "reference": "7f7e7586b81ac3c6c2f4a088225fc34817cde115",
                 "shasum": ""
             },
             "require": {
@@ -982,10 +982,10 @@
             ],
             "description": "GraphQL Types, Inputs and tests generated from Anorm models, and the runtime they share",
             "support": {
-                "source": "https://github.com/saygoweb/anorm-graphql/tree/v0.3.0",
+                "source": "https://github.com/saygoweb/anorm-graphql/tree/v0.3.1",
                 "issues": "https://github.com/saygoweb/anorm-graphql/issues"
             },
-            "time": "2026-09-26T03:38:52+00:00"
+            "time": "2026-10-21T04:15:57+00:00"
         },
         {
             "name": "slim/psr7",

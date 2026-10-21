@@ -4,10 +4,12 @@ namespace FA\GraphQL\Error;
 
 use GraphQL\Error\DebugFlag;
 use GraphQL\Error\FormattedError;
+use GraphQL\Error\UserError;
 
 /**
- * Three kinds of error reach a client: ours, with a code; GraphQL's own syntax and
- * validation errors, as they are; and everything else, masked and logged.
+ * Four kinds of error reach a client: ours, with a code; a UserError (how
+ * anorm-graphql's ModelType refuses a bad `query`), as BAD_INPUT; GraphQL's own
+ * syntax and validation errors, as they are; and everything else, masked and logged.
  */
 class ErrorFormatter
 {
@@ -34,6 +36,11 @@ class ErrorFormatter
         if ($previous instanceof ApiError) {
             $formatted['message'] = $previous->getMessage();
             $formatted['extensions'] = ($formatted['extensions'] ?? []) + (array) $previous->getExtensions();
+            return $formatted;
+        }
+        if ($previous instanceof UserError) {
+            $formatted['message'] = $previous->getMessage();
+            $formatted['extensions'] = ['code' => 'BAD_INPUT'] + ($formatted['extensions'] ?? []);
             return $formatted;
         }
         if ($previous === null) {
