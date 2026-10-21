@@ -68,6 +68,15 @@ final class FaText
     }
 
     /**
+     * One string as html_cleanup() leaves it in $_POST: html_specials_encode()d once,
+     * nothing decoded first, so a literal "&amp;" becomes "&amp;amp;" as it does there.
+     */
+    public static function clean(string $text): string
+    {
+        return @htmlspecialchars($text, ENT_QUOTES, self::charset());
+    }
+
+    /**
      * html_cleanup() of an input: every string in it html_specials_encode()d, as
      * session.inc does to $_POST; keys, numbers, booleans, nulls and objects (a
      * DateTimeImmutable) as they are.
@@ -79,7 +88,7 @@ final class FaText
     {
         foreach ($input as $key => $value) {
             if (is_string($value)) {
-                $input[$key] = @htmlspecialchars($value, ENT_QUOTES, self::charset());
+                $input[$key] = self::clean($value);
             } elseif (is_array($value)) {
                 $input[$key] = self::cleanInput($value);
             }

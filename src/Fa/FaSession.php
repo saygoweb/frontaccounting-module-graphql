@@ -135,6 +135,12 @@ class FaSession implements SessionGate
             throw new Unauthenticated(self::BAD_CREDENTIALS);
         }
 
+        // FrontAccounting's login screen and its password screens (admin/users.php,
+        // change_current_user_password.php) hash $_POST['password'] after
+        // session.inc's html_cleanup() has encoded it, so a password with & < > " '
+        // is stored as the md5 of its encoded form. Encode it the same way here
+        // (saygoweb/frontaccounting-module-graphql#20).
+        $password = FaText::clean($password);
         if ($login === '' || !$_SESSION['wa_current_user']->login($company, $login, $password)) {
             throw new Unauthenticated(self::BAD_CREDENTIALS);
         }
