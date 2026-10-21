@@ -46,6 +46,11 @@
             "FA\\GraphQL\\Tests\\": "tests/"
         }
     },
+    "extra": {
+        "fa-module": {
+            "name": "GraphQL API"
+        }
+    },
     "scripts": {
         "test": "phpunit -c phpunit.xml",
         "lint": "find . -name vendor -prune -o -type f \\( -name '*.php' -o -path ./bin/fa-report -o -path ./bin/fa-token \\) -print0 | xargs -0 -n1 php -l",
@@ -62,6 +67,8 @@
             "@cs:check",
             "@analyze"
         ],
+        "fa:version": "sh ../../docker/ci/fa-module version",
+        "fa:package": "sh ../../docker/ci/fa-module package",
         "ci": [
             "@quality",
             "@test"
@@ -75,6 +82,8 @@
         "analyze": "Run PHPStan over src/ (phpstan.neon).",
         "generate": "anorm-graphql make with this module's options (bin/generate). Runs on the host too: bin/generate.",
         "quality": "lint, cs:check, then analyze.",
+        "fa:version": "Print this checkout's module version (run from modules/graphql in a FrontAccounting checkout).",
+        "fa:package": "Build the .tgz and .zip release packages into build/dist/ (docker/ci/fa-module).",
         "ci": "quality, then test - the gates tools/ci.sh runs, before its FrontAccounting checks."
     }
 }

@@ -717,6 +717,22 @@ Before committing, run `composer config --unset repositories.local` and
 `composer update saygoweb/anorm-graphql`, so `composer.lock` names the
 released version again.
 
+## Releasing
+
+Releases are tags. On the deploy branch (`main`), with CI green:
+
+    git tag v1.2.3 && git push origin v1.2.3
+
+`.github/workflows/release.yml` runs the tests, then packages the module with
+FrontAccounting's `docker/ci/fa-module` and publishes the GitHub release:
+`frontaccounting-2.4-graphql.module.1.2.3.tgz` and `.zip`, each with
+`_init/config` (`Version: 2.4-1.2.3`). Untagged builds, such as bms's deploys,
+are versioned `2.4-1.2.3-<n>-g<sha>`.
+
+`composer fa:version` prints this checkout's version and
+`composer fa:package` builds the packages into `build/dist/`. Both run from
+inside a FrontAccounting checkout (`modules/graphql`).
+
 ## Installing into FrontAccounting
 
 Clone into `modules/graphql`, run `composer install --no-dev`, then install and
