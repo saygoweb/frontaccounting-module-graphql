@@ -29,7 +29,11 @@ areas apply; one company per request; every response is JSON.
 | Payments | `customerPaymentList` (with `allocations`, `unallocated`), `allocationList` | `customerPaymentCreate` (with allocations), `customerPaymentUpdate` (reallocate), `customerPaymentDelete` (void) |
 
 Every list takes `query: MangoInput` (a JSON Mango selector, `limit`, `skip`,
-`sort`). Writes go through FrontAccounting's own functions — references, audit trail,
+`sort`). A `sort` item is a field, ascending, or `-field` / `field desc` for
+descending (`field asc` also works; the direction is case-insensitive), so
+`invoiceList(query: {sort: ["-date", "-id"], limit: 10})` is the ten newest
+invoices. An unknown field or direction is `BAD_INPUT`, and its message lists the
+fields the list can sort on. Writes go through FrontAccounting's own functions — references, audit trail,
 GL postings, hooks — in one transaction per mutation call; a batch is atomic.
 
 Rows marked *(sgw_sales extension)* are served by the `sgw_sales` FrontAccounting
@@ -78,7 +82,9 @@ $pair = $body['data']['login'];
 - HTTP 403 means the user's role lacks GraphQL API access.
 - Errors carry `extensions.code`: `UNAUTHENTICATED`, `FORBIDDEN`, `BAD_INPUT`,
   `NOT_FOUND`, `FA_REJECTED` (with FrontAccounting's own messages in
-  `extensions.messages`), `INTERNAL`.
+  `extensions.messages`), `INTERNAL`. A malformed list `query` (bad selector JSON,
+  an unknown field, a bad `sort` item) is `BAD_INPUT`, with a message saying what
+  is wrong.
 - `login` is refused over plain HTTP unless `allow_insecure_login` is set:
   FrontAccounting stores passwords as unsalted MD5.
 - One company per request. `login` takes `company` (default 0), and a refresh token
