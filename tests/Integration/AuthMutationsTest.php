@@ -71,6 +71,36 @@ class AuthMutationsTest extends FaTestCase
         }
     }
 
+    /**
+     * saygoweb/frontaccounting-module-graphql#20. FrontAccounting's screens hash the
+     * password after session.inc's html_cleanup() has encoded $_POST: users.php and
+     * change_current_user_password.php store md5($_POST['password']), and the login
+     * screen checks md5($_POST['password']), so a password with & < > " ' is stored
+     * as the md5 of its htmlspecialchars(ENT_QUOTES) form. The API takes the
+     * password as JSON, which nothing encodes; it must still match.
+     */
+    public function testLoginAcceptsAPasswordWithHtmlSpecialCharsAsFrontAccountingStoresIt(): void
+    {
+        // Password => what users.php stores: md5 of the html_cleanup()ed POST value,
+        // which encodes once without decoding, so a literal "&amp;" gains an "amp;".
+        $cases = [
+            "Tom & Jerry's <pw>" => md5('Tom &amp; Jerry&#039;s &lt;pw&gt;'),
+            'a&amp;"b"' => md5('a&amp;amp;&quot;b&quot;'),
+        ];
+        $set = $this->pdo()->prepare("UPDATE 0_users SET password = ? WHERE user_id = 'apitest'");
+        try {
+            foreach ($cases as $password => $stored) {
+                $set->execute([$stored]);
+                $payload = $this->container()->get(AuthMutations::class)
+                    ->resolveLogin(null, ['company' => 0, 'user' => 'apitest', 'password' => $password]);
+
+                $this->assertSame(2, substr_count($payload['accessToken'], '.'), $password);
+            }
+        } finally {
+            $set->execute([md5('password')]);
+        }
+    }
+
     public function testWrongPasswordAndUnknownUserGetTheSameMessage(): void
     {
         $messages = [];

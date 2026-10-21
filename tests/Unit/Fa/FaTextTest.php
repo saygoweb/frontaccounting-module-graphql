@@ -79,6 +79,13 @@ class FaTextTest extends TestCase
         ], FaText::cleanInput($input));
     }
 
+    public function testCleanEncodesOnceAsHtmlCleanupDoes(): void
+    {
+        $this->assertSame('Tom &amp; Jerry&#039;s &lt;pw&gt; &quot;x&quot;', FaText::clean('Tom & Jerry\'s <pw> "x"'));
+        $this->assertSame('a&amp;amp;b', FaText::clean('a&amp;b'), 'an entity is not decoded first');
+        $this->assertSame('plain', FaText::clean('plain'));
+    }
+
     public function testEncodeSelectorEncodesValuesNotKeys(): void
     {
         $selector = json_encode([
