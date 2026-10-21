@@ -28,6 +28,7 @@ use FA\GraphQL\Type\Customer\CustomerUpdateInput;
 use FA\GraphQL\Type\DeliveryLine\DeliveryLineType;
 use FA\GraphQL\Type\Delivery\DeliveryCreateInput;
 use FA\GraphQL\Type\Delivery\DeliveryType;
+use FA\GraphQL\Type\FaModelType;
 use FA\GraphQL\Type\InvoiceLine\InvoiceLineType;
 use FA\GraphQL\Type\Invoice\InvoiceCreateInput;
 use FA\GraphQL\Type\Invoice\InvoiceEmailResultType;
@@ -408,6 +409,7 @@ class ApiSchema extends Schema
                 ],
             ]),
         ];
+        $object['query'] = self::withQueryDescriptions($object['query']);
         parent::__construct($object);
     }
 
@@ -427,12 +429,41 @@ class ApiSchema extends Schema
     {
         $list = substr($name, 0, -strlen('Count')) . 'List';
 
-        return GraphQLUtils::createCountField($name, $this->type($typeClass))
-            ->addArgument('query', $this->type(MangoInput::class))
+        /** @var FaModelType $type */
+        $type = $this->type($typeClass);
+
+        return GraphQLUtils::createCountField($name, $type)
+            ->addArgument('query', $this->type(MangoInput::class), $type->queryDescription())
             ->setDescription(
                 "How many rows $list returns for this query with no limit: the same selector, scope and "
                 . "access. limit, skip and sort are ignored, so a page's query can be passed as it is."
             )
             ->build();
+    }
+
+    /**
+     * $query with the description of each generated list's query argument set to
+     * the fields it accepts (issue #21). The generated entries stay as anorm-graphql
+     * writes them; they are described here, in the field config, which is what
+     * SchemaAssembler builds the served Query from.
+     */
+    private static function withQueryDescriptions(ObjectType $query): ObjectType
+    {
+        $fields = $query->config['fields'];
+        foreach ($fields as $key => $field) {
+            if (!is_array($field) || !isset($field['args']['query']) || isset($field['args']['query']['description'])) {
+                continue;
+            }
+            $type = Type::getNamedType($field['type']);
+            if ($type instanceof FaModelType) {
+                $fields[$key]['args']['query']['description'] = $type->queryDescription();
+            }
+        }
+
+        return new ObjectType([
+            'name' => $query->name,
+            'description' => $query->description,
+            'fields' => $fields,
+        ]);
     }
 }

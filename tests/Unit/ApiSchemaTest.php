@@ -4,6 +4,9 @@ namespace FA\GraphQL\Tests\Unit;
 
 use DI\ContainerBuilder;
 use FA\GraphQL\ApiSchema;
+use FA\GraphQL\Db\UnconnectedPdo;
+use FA\GraphQL\Type\FaModelType;
+use GraphQL\Type\Definition\Type;
 use GraphQL\Utils\SchemaPrinter;
 use PHPUnit\Framework\TestCase;
 
@@ -92,7 +95,12 @@ class ApiSchemaTest extends TestCase
     {
         $sdl = SchemaPrinter::doPrint($this->schema());
 
-        $this->assertStringContainsString('salesTypeList(query: MangoInput): [SalesTypeType!]!', $sdl);
+        // The query argument's description is its queryable fields (issue #21).
+        $this->assertMatchesRegularExpression(
+            '/salesTypeList\(\s+"Fields for selector and sort: id, name, taxIncluded, factor, inactive\. [^"]*"'
+            . '\s+query: MangoInput\s+\): \[SalesTypeType!\]!/',
+            $sdl
+        );
         $typePattern = '/type SalesTypeType \{\s+id: ID!\s+name: String\s+taxIncluded: Boolean'
             . '\s+factor: Float\s+inactive: Boolean\s+\}/';
         $this->assertMatchesRegularExpression($typePattern, $sdl);
@@ -129,6 +137,82 @@ class ApiSchemaTest extends TestCase
             $this->assertStringContainsString($name, (string) $count->description, $countName);
         }
         $this->assertSame(22, $lists);
+    }
+
+    /**
+     * Issue #21: the fields a list's query.selector and query.sort accept are in the
+     * description of its query argument, and of its count's. invoiceList's computed
+     * fields are not among them: they are refused with BAD_INPUT.
+     */
+    public function testTheInvoiceListsQueryDescriptionNamesExactlyItsQueryableFields(): void
+    {
+        $fields = $this->schema()->getQueryType()->getFields();
+        $expected = [
+            'id', 'transType', 'version', 'customerId', 'branchId', 'date', 'dueDate', 'reference',
+            'salesTypeId', 'orderId', 'amount', 'tax', 'freight', 'freightTax', 'discount', 'allocated',
+            'prepaymentAmount', 'rate', 'shipperId', 'paymentTermsId', 'taxIncluded',
+        ];
+        foreach (['invoiceList', 'invoiceCount'] as $name) {
+            $description = (string) $fields[$name]->getArg('query')->description;
+            $named = self::namedFields($description);
+            $this->assertSame($expected, $named, $name);
+            foreach (['total', 'outstanding', 'voided', 'lines'] as $computed) {
+                $this->assertNotContains($computed, $named, "$name: $computed");
+            }
+            $this->assertStringContainsString('Only these fields', $description, $name);
+        }
+    }
+
+    /**
+     * Issue #21: every list's query description, and its count's, names its model's
+     * properties: the map ModelType::assertFieldName() checks a selector and a sort
+     * against.
+     */
+    public function testEveryListsQueryDescriptionNamesItsModelsProperties(): void
+    {
+        $fields = $this->schema()->getQueryType()->getFields();
+        $lists = 0;
+        foreach ($fields as $name => $field) {
+            if (substr($name, -4) !== 'List' || $field->getArg('query') === null) {
+                continue;
+            }
+            $lists++;
+            $type = Type::getNamedType($field->getType());
+            $this->assertInstanceOf(FaModelType::class, $type, $name);
+            $expected = self::modelProperties($type);
+            $this->assertSame($expected, self::namedFields((string) $field->getArg('query')->description), $name);
+            $count = $fields[substr($name, 0, -4) . 'Count'];
+            $this->assertSame(
+                $field->getArg('query')->description,
+                $count->getArg('query')->description,
+                $name . ' and its count'
+            );
+        }
+        $this->assertSame(22, $lists);
+    }
+
+    /**
+     * @return string[] the names a query description lists
+     */
+    private static function namedFields(string $description): array
+    {
+        if (!preg_match('/Fields for selector and sort: ([^.]+)\./', $description, $m)) {
+            return [];
+        }
+
+        return array_map('trim', explode(',', $m[1]));
+    }
+
+    /**
+     * @return string[] the property names of $type's model, read from a model built
+     *                  on a PDO that never connects
+     */
+    private static function modelProperties(Type $type): array
+    {
+        $method = new \ReflectionMethod($type, 'modelClass');
+        $method->setAccessible(true);
+        $class = $method->invoke($type);
+        return array_keys((new $class(new UnconnectedPdo()))->mapper()->map);
     }
 
     public function testQueryAndMutationFieldsAreAlphabetical(): void

@@ -32,7 +32,11 @@ Every list takes `query: MangoInput` (a JSON Mango selector, `limit`, `skip`,
 `sort`). A `sort` item is a field, ascending, or `-field` / `field desc` for
 descending (`field asc` also works; the direction is case-insensitive), so
 `invoiceList(query: {sort: ["-date", "-id"], limit: 10})` is the ten newest
-invoices. An unknown field or direction is `BAD_INPUT`, and its message lists the
+invoices. The fields a list's `selector` and `sort` accept are its model's
+columns, listed in the description of its `query` argument ("Fields for selector
+and sort: id, transType, version, customerId, ..."), and of its count's. A
+computed field, such as `invoiceList`'s `total`, `outstanding` and `voided`, is
+not among them. An unknown field or direction is `BAD_INPUT`, and its message lists the
 fields the list can sort on. Beside every such list is a count,
 `invoiceCount(query: MangoInput): Int!` and so on, for paging (see
 [Paging](#paging)). Writes go through FrontAccounting's own functions — references, audit trail,
