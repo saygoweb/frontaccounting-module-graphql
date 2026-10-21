@@ -171,4 +171,26 @@ class EscapedTextTest extends SalesOrderTestCase
         );
         $this->assertSame([$id], $ids(['comments' => ['$beginsWith' => 'Hosting - Clubs & ']]));
     }
+
+    /**
+     * A count's selector is escaped as a list's is (issue #17), so the two agree.
+     */
+    public function testACountsSelectorMatchesTheTextAsTheListsDoes(): void
+    {
+        $id = $this->createThroughTheApi(self::TEXT);
+        $count = function (array $selector): int {
+            return $this->gql(
+                'query ($q: MangoInput) { salesOrderCount(query: $q) }',
+                ['q' => ['selector' => (string) json_encode($selector)]]
+            )['salesOrderCount'];
+        };
+
+        $asRead = ['$and' => [['id' => (string) $id], ['comments' => self::TEXT]]];
+        $this->assertCount(1, $this->listed($asRead));
+        $this->assertSame(1, $count($asRead));
+        $byPattern = ['$and' => [['id' => (string) $id], ['comments' => ['$regex' => 'Clubs & Char']]]];
+        $this->assertSame(1, $count($byPattern));
+        $asStored = ['$and' => [['id' => (string) $id], ['comments' => ['$regex' => 'Clubs &amp; Char']]]];
+        $this->assertSame(count($this->listed($asStored)), $count($asStored), 'the stored form matches neither');
+    }
 }

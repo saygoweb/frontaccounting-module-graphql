@@ -54,7 +54,7 @@ use GraphQL\Type\Schema;
  * `// anorm-graphql` comment; remove the comment to take an entry over.
  * Keep the entries of each fields array in alphabetical order.
  *
- * Scaffolded by `bin/generate`. apiVersion, me and the auth mutations are written by
+ * Scaffolded by `bin/generate`. apiVersion, me, the <entity>Count fields and the auth mutations are written by
  * hand; everything marked `// anorm-graphql` is the generator's.
  */
 class ApiSchema extends Schema
@@ -72,6 +72,7 @@ class ApiSchema extends Schema
             'query' => new ObjectType([
                 'name' => 'Query',
                 'fields' => [
+                    $this->countField('allocationCount', AllocationType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('allocationList', $this->type(AllocationType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
@@ -83,18 +84,22 @@ class ApiSchema extends Schema
                             return self::VERSION;
                         },
                     ],
+                    $this->countField('bankAccountCount', BankAccountType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('bankAccountList', $this->type(BankAccountType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('branchCount', BranchType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('branchList', $this->type(BranchType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('contactCount', ContactType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('contactList', $this->type(ContactType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('creditStatusCount', CreditStatusType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField(
                         'creditStatusList',
@@ -103,14 +108,17 @@ class ApiSchema extends Schema
                     )
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('currencyCount', CurrencyType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('currencyList', $this->type(CurrencyType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('customerCount', CustomerType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('customerList', $this->type(CustomerType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('customerPaymentCount', CustomerPaymentType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField(
                         'customerPaymentList',
@@ -119,6 +127,8 @@ class ApiSchema extends Schema
                     )
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('deliveryCount', DeliveryType::class),
+                    $this->countField('deliveryLineCount', DeliveryLineType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField(
                         'deliveryLineList',
@@ -131,6 +141,8 @@ class ApiSchema extends Schema
                     GraphQLUtils::createListField('deliveryList', $this->type(DeliveryType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('invoiceCount', InvoiceType::class),
+                    $this->countField('invoiceLineCount', InvoiceLineType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('invoiceLineList', $this->type(InvoiceLineType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
@@ -139,6 +151,7 @@ class ApiSchema extends Schema
                     GraphQLUtils::createListField('invoiceList', $this->type(InvoiceType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('locationCount', LocationType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('locationList', $this->type(LocationType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
@@ -150,6 +163,7 @@ class ApiSchema extends Schema
                             return $this->type(ViewerType::class)->resolveMe();
                         },
                     ],
+                    $this->countField('paymentTermsCount', PaymentTermsType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField(
                         'paymentTermsList',
@@ -158,10 +172,13 @@ class ApiSchema extends Schema
                     )
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('salesAreaCount', SalesAreaType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('salesAreaList', $this->type(SalesAreaType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('salesOrderCount', SalesOrderType::class),
+                    $this->countField('salesOrderLineCount', SalesOrderLineType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField(
                         'salesOrderLineList',
@@ -174,22 +191,27 @@ class ApiSchema extends Schema
                     GraphQLUtils::createListField('salesOrderList', $this->type(SalesOrderType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('salesTypeCount', SalesTypeType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('salesTypeList', $this->type(SalesTypeType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('salesmanCount', SalesmanType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('salesmanList', $this->type(SalesmanType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('shipperCount', ShipperType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('shipperList', $this->type(ShipperType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('stockItemCount', StockItemType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('stockItemList', $this->type(StockItemType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    $this->countField('taxGroupCount', TaxGroupType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('taxGroupList', $this->type(TaxGroupType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
@@ -392,5 +414,25 @@ class ApiSchema extends Schema
     private function type(string $name)
     {
         return $this->context->get($name);
+    }
+
+    /**
+     * <entity>Count beside <entity>List (issue #17), written by hand: anorm-graphql
+     * generates lists only. Resolved by the Type's resolveCount(), which counts what its
+     * resolveList() returns with no limit.
+     *
+     * @return array<string, mixed>
+     */
+    private function countField(string $name, string $typeClass): array
+    {
+        $list = substr($name, 0, -strlen('Count')) . 'List';
+
+        return GraphQLUtils::createCountField($name, $this->type($typeClass))
+            ->addArgument('query', $this->type(MangoInput::class))
+            ->setDescription(
+                "How many rows $list returns for this query with no limit: the same selector, scope and "
+                . "access. limit, skip and sort are ignored, so a page's query can be passed as it is."
+            )
+            ->build();
     }
 }

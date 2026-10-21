@@ -65,11 +65,36 @@ class ContactType extends ContactTypeBase
      */
     public function resolveList($root, $args, Container $context): array
     {
+        $scoped = $this->inContactScope($args, $context);
+
+        return $scoped === null ? [] : parent::resolveList($root, $scoped, $context);
+    }
+
+    /**
+     * The list's count (issue #17), narrowed exactly as resolveList() is.
+     */
+    public function resolveCount($root, $args, Container $context): int
+    {
+        $scoped = $this->inContactScope($args, $context);
+
+        return $scoped === null ? 0 : parent::resolveCount($root, $scoped, $context);
+    }
+
+    /**
+     * $args with the Contact scope ANDed into its selector, after the list area is
+     * checked; null when no person is in scope, so there is nothing to list or count.
+     *
+     * @param mixed $args
+     * @return array<string, mixed>|null
+     */
+    private function inContactScope($args, Container $context): ?array
+    {
         $this->authorize(self::VERB_LIST, null, $context);
         $inScope = ContactLinks::personIdsInScope($context->get(\PDO::class));
         if ($inScope === []) {
-            return [];
+            return null;
         }
+        $args = is_array($args) ? $args : [];
         $query = isset($args['query']) && is_array($args['query']) ? $args['query'] : [];
         $scope = json_encode(['id' => ['$in' => $inScope]]);
         $selector = $query['selector'] ?? null;
@@ -82,7 +107,7 @@ class ContactType extends ContactTypeBase
         }
         $args['query'] = $query;
 
-        return parent::resolveList($root, $args, $context);
+        return $args;
     }
 
     public function resolveCreate($root, $args, Container $context): array
