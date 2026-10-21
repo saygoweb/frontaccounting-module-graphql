@@ -13,3 +13,5 @@ config_graphql.php
 
 # phpunit's test-order cache
 .phpunit.result.cache
+/_init/
+/build/dist/
