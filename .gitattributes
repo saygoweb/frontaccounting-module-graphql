@@ -14,3 +14,4 @@ docker export-ignore
 build export-ignore
 tmp export-ignore
 ROADMAP-*.md export-ignore
+.serena export-ignore
