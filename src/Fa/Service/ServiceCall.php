@@ -7,6 +7,7 @@ use FA\GraphQL\Error\FaRejected;
 use FA\GraphQL\Error\NotFound;
 use FA\GraphQL\Fa\FaErrorException;
 use FA\GraphQL\Fa\FaMessages;
+use FA\GraphQL\Fa\FaText;
 use FA\GraphQL\Fa\FaTransaction;
 use FA\GraphQL\Fa\Warnings;
 
@@ -14,6 +15,9 @@ use FA\GraphQL\Fa\Warnings;
  * How every service method calls FrontAccounting (Release 2 spec sections 2.1, 3):
  * one transaction, FrontAccounting's error messages turned into FA_REJECTED (and the
  * work rolled back), its warnings reported once the work has committed.
+ *
+ * A batch's input items reach $work as a screen's POST reaches FrontAccounting:
+ * their strings HTML-escaped by FaText::cleanInput(), html_cleanup()'s work.
  */
 final class ServiceCall
 {
@@ -41,7 +45,8 @@ final class ServiceCall
 
     /**
      * A batch — one generated mutation's input list — in one transaction: any refusal
-     * rolls back every item, and the error names the item's index.
+     * rolls back every item, and the error names the item's index. An item that is an
+     * array (an input) is FaText::cleanInput()ed; a key is passed as it is.
      *
      * @param array<int|string, mixed> $inputs
      * @return array<int, mixed> $work's results, in order
@@ -54,7 +59,7 @@ final class ServiceCall
             $results = [];
             foreach (array_values($inputs) as $index => $input) {
                 try {
-                    $results[] = $work($input, $index);
+                    $results[] = $work(is_array($input) ? FaText::cleanInput($input) : $input, $index);
                 } catch (BadInput | FaRejected | NotFound $e) {
                     // The services' own refusals and guards, not only FrontAccounting's
                     // messages, name the item (spec section 3.1).

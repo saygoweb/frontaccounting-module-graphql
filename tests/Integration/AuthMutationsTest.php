@@ -55,6 +55,22 @@ class AuthMutationsTest extends FaTestCase
         $this->assertContains('SA_SALESORDER', $me['areas']);
     }
 
+    public function testMeServesTheUsersNameAsTextNotAsFrontAccountingStoresIt(): void
+    {
+        // As users.php stores "API & Test" (saygoweb/frontaccounting-module-graphql#16).
+        $rename = $this->pdo()->prepare("UPDATE 0_users SET real_name = ? WHERE user_id = 'apitest'");
+        $rename->execute(['API &amp; Test']);
+        try {
+            $container = $this->container();
+            $container->get(AuthMutations::class)
+                ->resolveLogin(null, ['company' => 0, 'user' => 'apitest', 'password' => 'password']);
+
+            $this->assertSame('API & Test', $container->get(ViewerType::class)->resolveMe()['name']);
+        } finally {
+            $rename->execute(['API Test']);
+        }
+    }
+
     public function testWrongPasswordAndUnknownUserGetTheSameMessage(): void
     {
         $messages = [];

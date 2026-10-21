@@ -85,6 +85,17 @@ $pair = $body['data']['login'];
   `extensions.messages`), `INTERNAL`. A malformed list `query` (bad selector JSON,
   an unknown field, a bad `sort` item) is `BAD_INPUT`, with a message saying what
   is wrong.
+- Text is plain text both ways. FrontAccounting stores text HTML-escaped (its
+  `db_escape()` and `html_cleanup()`: `&`, `<`, `>`, `"`, `'` as `&amp;`, `&lt;`,
+  `&gt;`, `&quot;`, `&#039;`); the API serves it decoded, so a line reads
+  `Clubs & Charities`, not `Clubs &amp; Charities`. Send text unescaped: a
+  mutation's input is escaped as FrontAccounting escapes a screen's POST, so it is
+  stored exactly as the same text typed into FrontAccounting, and its screens show
+  it as sent. A list's `selector` matches the text as you read it (`$regex` and
+  `$beginsWith` patterns are escaped the same way). One exception, FrontAccounting's
+  own: a sales document's comments and line descriptions are decoded again before
+  they are stored, so text in them that spells an entity, such as a literal
+  `&amp;`, comes back as `&` — as it does when typed into its sales screens.
 - `login` is refused over plain HTTP unless `allow_insecure_login` is set:
   FrontAccounting stores passwords as unsalted MD5.
 - One company per request. `login` takes `company` (default 0), and a refresh token
