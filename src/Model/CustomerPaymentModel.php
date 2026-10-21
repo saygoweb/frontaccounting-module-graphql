@@ -4,6 +4,8 @@ namespace FA\GraphQL\Model;
 
 use Anorm\DataMapper;
 use Anorm\Model;
+use Anorm\Transform\BooleanTransform;
+use FA\GraphQL\Db\ComputedColumns;
 use FA\GraphQL\Db\Connection;
 use FA\GraphQL\Db\SqlDateTransform;
 use FA\GraphQL\Fa\CompanyContext;
@@ -59,10 +61,19 @@ class CustomerPaymentModel extends Model
     /** @var float The customer currency's rate to the company currency on the date */
     public $rate = 1.0;
 
+    /** @var bool Whether it has a voided entry; worked out in SQL (ComputedColumns) */
+    public $voided;
+
+    /** @var float Amount plus discount less allocated, 0 within FrontAccounting's FLOAT_COMP_DELTA; worked out in SQL */
+    public $unallocated;
+
     public function __construct(?\PDO $pdo = null)
     {
         $pdo = $pdo ?: Connection::current();
-        $mapper = DataMapper::create($pdo, CompanyContext::prefix() . 'debtor_trans', [
+        $mapper = DataMapper::create($pdo, ComputedColumns::debtorTrans(CompanyContext::prefix(), [
+            'voided' => ComputedColumns::voided(),
+            'unallocated' => ComputedColumns::paymentUnallocated(),
+        ]), [
             'id' => 'trans_no',
             'transType' => 'type',
             'version' => 'version',
@@ -74,9 +85,12 @@ class CustomerPaymentModel extends Model
             'discount' => 'ov_discount',
             'allocated' => 'alloc',
             'rate' => 'rate',
+            'voided' => 'voided',
+            'unallocated' => 'unallocated',
         ]);
         $mapper->transformers = [
             'tran_date' => new SqlDateTransform(),
+            'voided' => new BooleanTransform(),
         ];
         parent::__construct($pdo, $mapper);
     }

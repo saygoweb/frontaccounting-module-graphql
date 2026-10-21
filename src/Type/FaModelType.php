@@ -103,9 +103,10 @@ abstract class FaModelType extends ModelType
      * The fields this Type's query.selector and query.sort accept (issue #21): its
      * model's property map, the one ModelType::assertFieldName() checks every name
      * against, less the words Anorm's Mango parser reads as operators, which it
-     * refuses too. A field the Type computes (an invoice's total) is not a property
-     * and is not among them. Read from a model built on a PDO that never connects,
-     * so the schema can be built with no database.
+     * refuses too. A field the Type computes in PHP (an invoice's lines) is not a
+     * property and is not among them; one the model computes in SQL (an invoice's
+     * outstanding, ComputedColumns) is. Read from a model built on a PDO that never
+     * connects, so the schema can be built with no database.
      *
      * @return string[] in the model's order
      */

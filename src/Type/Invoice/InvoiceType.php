@@ -64,15 +64,17 @@ class InvoiceType extends InvoiceTypeBase
                 })
                 ->build(),
             FieldBuilder::create('total', Type::nonNull(Type::float()))
-                ->setDescription('Items, tax, freight and freight tax, less discount — FrontAccounting\'s Total.')
+                ->setDescription('Items, tax, freight, freight tax and ov_discount — FrontAccounting\'s Total; '
+                    . 'a prepayment invoice\'s is its prepayment amount.')
                 ->setResolver(function (array $row): float {
-                    return self::total($row);
+                    return (float) $row['total'];
                 })
                 ->build(),
             FieldBuilder::create('outstanding', Type::nonNull(Type::float()))
-                ->setDescription('The total less what has been allocated to it.')
+                ->setDescription('The total less what has been allocated to it; 0 within FrontAccounting\'s '
+                    . 'tolerance (0.004), so rounding leaves nothing open.')
                 ->setResolver(function (array $row): float {
-                    return round(self::total($row) - (float) $row['allocated'], 2);
+                    return (float) $row['outstanding'] + 0.0;
                 })
                 ->build(),
             FieldBuilder::create('deliveryIds', Type::nonNull(Type::listOf(Type::nonNull(Type::id()))))
@@ -83,9 +85,8 @@ class InvoiceType extends InvoiceTypeBase
                 ->build(),
             FieldBuilder::create('voided', Type::nonNull(Type::boolean()))
                 ->setDescription('Voided: the row stays, its amounts zeroed.')
-                ->setResolver(function (array $row, $args, $context): bool {
-                    return $row['voided'] ?? $context->get(Voider::class)
-                        ->isVoided(InvoiceService::TRANS_TYPE, (int) $row['id']);
+                ->setResolver(function (array $row): bool {
+                    return (bool) $row['voided'];
                 })
                 ->build(),
         ]);
@@ -132,22 +133,6 @@ class InvoiceType extends InvoiceTypeBase
         });
 
         return $before;
-    }
-
-    /**
-     * @param array<string, mixed> $row
-     */
-    private static function total(array $row): float
-    {
-        if ((float) $row['prepaymentAmount'] > 0) {
-            return (float) $row['prepaymentAmount'];
-        }
-
-        return round(
-            (float) $row['amount'] + (float) $row['tax'] + (float) $row['freight'] + (float) $row['freightTax']
-            + (float) $row['discount'],
-            2
-        );
     }
 
     /**
