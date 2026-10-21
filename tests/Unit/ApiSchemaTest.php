@@ -141,8 +141,9 @@ class ApiSchemaTest extends TestCase
 
     /**
      * Issue #21: the fields a list's query.selector and query.sort accept are in the
-     * description of its query argument, and of its count's. invoiceList's computed
-     * fields are not among them: they are refused with BAD_INPUT.
+     * description of its query argument, and of its count's. Issue #27: total,
+     * outstanding and voided are among them, worked out in SQL; the other computed
+     * fields, lines and deliveryIds, are not: they are refused with BAD_INPUT.
      */
     public function testTheInvoiceListsQueryDescriptionNamesExactlyItsQueryableFields(): void
     {
@@ -151,15 +152,38 @@ class ApiSchemaTest extends TestCase
             'id', 'transType', 'version', 'customerId', 'branchId', 'date', 'dueDate', 'reference',
             'salesTypeId', 'orderId', 'amount', 'tax', 'freight', 'freightTax', 'discount', 'allocated',
             'prepaymentAmount', 'rate', 'shipperId', 'paymentTermsId', 'taxIncluded',
+            'total', 'outstanding', 'voided',
         ];
         foreach (['invoiceList', 'invoiceCount'] as $name) {
             $description = (string) $fields[$name]->getArg('query')->description;
             $named = self::namedFields($description);
             $this->assertSame($expected, $named, $name);
-            foreach (['total', 'outstanding', 'voided', 'lines'] as $computed) {
+            foreach (['lines', 'deliveryIds'] as $computed) {
                 $this->assertNotContains($computed, $named, "$name: $computed");
             }
             $this->assertStringContainsString('Only these fields', $description, $name);
+        }
+    }
+
+    /**
+     * Issue #27: deliveryList's voided, and customerPaymentList's voided and
+     * unallocated, are queryable; the fields read from other tables are not.
+     */
+    public function testDeliveriesAndPaymentsNameTheirComputedQueryableFields(): void
+    {
+        $fields = $this->schema()->getQueryType()->getFields();
+        $cases = [
+            'deliveryList' => [['voided'], ['lines']],
+            'deliveryCount' => [['voided'], ['lines']],
+            'customerPaymentList' => [['voided', 'unallocated'], ['allocations', 'bankAccountId', 'memo']],
+            'customerPaymentCount' => [['voided', 'unallocated'], ['allocations', 'bankAccountId', 'memo']],
+        ];
+        foreach ($cases as $name => [$queryable, $refused]) {
+            $named = self::namedFields((string) $fields[$name]->getArg('query')->description);
+            $this->assertSame($queryable, array_slice($named, -count($queryable)), $name);
+            foreach ($refused as $computed) {
+                $this->assertNotContains($computed, $named, "$name: $computed");
+            }
         }
     }
 

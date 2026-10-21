@@ -9,7 +9,6 @@ use DI\Container;
 use FA\GraphQL\Fa\DocumentLock;
 use FA\GraphQL\Fa\Service\DeliveryService;
 use FA\GraphQL\Fa\Service\ServiceCall;
-use FA\GraphQL\Fa\Service\Voider;
 use FA\GraphQL\Model\DeliveryLineModel;
 use FA\GraphQL\Type\Delivery\Base\DeliveryTypeBase;
 use FA\GraphQL\Type\DeliveryLine\DeliveryLineType;
@@ -60,9 +59,8 @@ class DeliveryType extends DeliveryTypeBase
                 ->build(),
             FieldBuilder::create('voided', Type::nonNull(Type::boolean()))
                 ->setDescription('Whether the delivery has been voided (deliveryDelete).')
-                ->setResolver(function (array $row, $args, $context): bool {
-                    return $row['voided'] ?? $context->get(Voider::class)
-                        ->isVoided(DeliveryService::TRANS_TYPE, (int) $row['id']);
+                ->setResolver(function (array $row): bool {
+                    return (bool) $row['voided'];
                 })
                 ->build(),
         ]);

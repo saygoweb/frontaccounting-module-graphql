@@ -5,6 +5,7 @@ namespace FA\GraphQL\Model;
 use Anorm\DataMapper;
 use Anorm\Model;
 use Anorm\Transform\BooleanTransform;
+use FA\GraphQL\Db\ComputedColumns;
 use FA\GraphQL\Db\Connection;
 use FA\GraphQL\Db\SqlDateTransform;
 use FA\GraphQL\Fa\CompanyContext;
@@ -86,10 +87,15 @@ class DeliveryModel extends Model
     /** @var bool Whether prices include tax */
     public $taxIncluded = false;
 
+    /** @var bool Whether it has a voided entry; worked out in SQL (ComputedColumns) */
+    public $voided;
+
     public function __construct(?\PDO $pdo = null)
     {
         $pdo = $pdo ?: Connection::current();
-        $mapper = DataMapper::create($pdo, CompanyContext::prefix() . 'debtor_trans', [
+        $mapper = DataMapper::create($pdo, ComputedColumns::debtorTrans(CompanyContext::prefix(), [
+            'voided' => ComputedColumns::voided(),
+        ]), [
             'id' => 'trans_no',
             'transType' => 'type',
             'version' => 'version',
@@ -111,11 +117,13 @@ class DeliveryModel extends Model
             'shipperId' => 'ship_via',
             'paymentTermsId' => 'payment_terms',
             'taxIncluded' => 'tax_included',
+            'voided' => 'voided',
         ]);
         $mapper->transformers = [
             'tran_date' => new SqlDateTransform(),
             'due_date' => new SqlDateTransform(),
             'tax_included' => new BooleanTransform(),
+            'voided' => new BooleanTransform(),
         ];
         parent::__construct($pdo, $mapper);
     }

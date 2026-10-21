@@ -34,9 +34,14 @@ descending (`field asc` also works; the direction is case-insensitive), so
 `invoiceList(query: {sort: ["-date", "-id"], limit: 10})` is the ten newest
 invoices. The fields a list's `selector` and `sort` accept are its model's
 columns, listed in the description of its `query` argument ("Fields for selector
-and sort: id, transType, version, customerId, ..."), and of its count's. A
-computed field, such as `invoiceList`'s `total`, `outstanding` and `voided`, is
-not among them. An unknown field or direction is `BAD_INPUT`, and its message lists the
+and sort: id, transType, version, customerId, ..."), and of its count's. Some
+computed fields are among them, worked out in SQL as the field reads them:
+`invoiceList`'s `total`, `outstanding` and `voided`, `deliveryList`'s `voided`, and
+`customerPaymentList`'s `voided` and `unallocated`. So a customer's unpaid invoices,
+newest first, are `invoiceList(query: {selector: "{\"customerId\": \"1\",
+\"outstanding\": {\"$gt\": 0}}", sort: ["-date"]})`; `outstanding` and
+`unallocated` read 0 within FrontAccounting's 0.004 tolerance, so rounding leaves
+nothing open. Other computed fields, such as `lines`, are not among them. An unknown field or direction is `BAD_INPUT`, and its message lists the
 fields the list can sort on. Beside every such list is a count,
 `invoiceCount(query: MangoInput): Int!` and so on, for paging (see
 [Paging](#paging)). Writes go through FrontAccounting's own functions — references, audit trail,

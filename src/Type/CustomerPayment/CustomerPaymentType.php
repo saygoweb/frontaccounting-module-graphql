@@ -64,9 +64,10 @@ class CustomerPaymentType extends CustomerPaymentTypeBase
                 })
                 ->build(),
             FieldBuilder::create('unallocated', Type::nonNull(Type::float()))
-                ->setDescription('Amount plus discount, less what is allocated.')
+                ->setDescription('Amount plus discount, less what is allocated; 0 within FrontAccounting\'s '
+                    . 'tolerance (0.004), so rounding leaves nothing unallocated.')
                 ->setResolver(function (array $row): float {
-                    return round((float) $row['amount'] + (float) $row['discount'] - (float) $row['allocated'], 2);
+                    return (float) $row['unallocated'] + 0.0;
                 })
                 ->build(),
             FieldBuilder::create('bankAccountId', Type::id())
@@ -103,9 +104,8 @@ class CustomerPaymentType extends CustomerPaymentTypeBase
                 ->build(),
             FieldBuilder::create('voided', Type::nonNull(Type::boolean()))
                 ->setDescription('Voided: the row stays, its amounts zeroed.')
-                ->setResolver(function (array $row, $args, $context): bool {
-                    return $row['voided'] ?? $context->get(Voider::class)
-                        ->isVoided(CustomerPaymentService::TRANS_TYPE, (int) $row['id']);
+                ->setResolver(function (array $row): bool {
+                    return (bool) $row['voided'];
                 })
                 ->build(),
         ]);
