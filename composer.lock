@@ -846,16 +846,16 @@
         },
         {
             "name": "saygoweb/anorm",
-            "version": "v3.2.1",
+            "version": "v3.3.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/saygoweb/anorm.git",
-                "reference": "c8ede3ff3f1002983353ea298976bd8579344c56"
+                "reference": "41e3472a9159a0919673e7906baaf6dcb0e01b14"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/saygoweb/anorm/zipball/c8ede3ff3f1002983353ea298976bd8579344c56",
-                "reference": "c8ede3ff3f1002983353ea298976bd8579344c56",
+                "url": "https://api.github.com/repos/saygoweb/anorm/zipball/41e3472a9159a0919673e7906baaf6dcb0e01b14",
+                "reference": "41e3472a9159a0919673e7906baaf6dcb0e01b14",
                 "shasum": ""
             },
             "require": {
@@ -892,9 +892,9 @@
             "description": "Another ORM for PHP",
             "support": {
                 "issues": "https://github.com/saygoweb/anorm/issues",
-                "source": "https://github.com/saygoweb/anorm/tree/v3.2.1"
+                "source": "https://github.com/saygoweb/anorm/tree/v3.3.2"
             },
-            "time": "2026-09-21T03:10:05+00:00"
+            "time": "2026-10-21T08:25:41+00:00"
         },
         {
             "name": "saygoweb/anorm-graphql",
