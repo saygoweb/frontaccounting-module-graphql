@@ -105,11 +105,31 @@ abstract class FaModelType extends ModelType
      */
     public function resolveList($root, $args, Container $context): array
     {
+        return parent::resolveList($root, self::encodedSelector($args), $context);
+    }
+
+    /**
+     * <entity>Count (issue #17): how many rows the list returns for this query with no
+     * limit — the same selector, escaped the same way, scope() and list area. limit,
+     * skip and sort are ignored. A Type that narrows its list beyond scope() overrides
+     * this to narrow the count the same way (ContactType).
+     */
+    public function resolveCount($root, $args, Container $context): int
+    {
+        return parent::resolveCount($root, self::encodedSelector($args), $context);
+    }
+
+    /**
+     * @param mixed $args
+     * @return mixed $args, its selector's strings escaped as FrontAccounting stores text
+     */
+    private static function encodedSelector($args)
+    {
         if (isset($args['query']['selector']) && is_string($args['query']['selector'])) {
             $args['query']['selector'] = FaText::encodeSelector($args['query']['selector']);
         }
 
-        return parent::resolveList($root, $args, $context);
+        return $args;
     }
 
     protected function authorize(string $verb, ?Model $model, Container $context): void

@@ -33,7 +33,9 @@ Every list takes `query: MangoInput` (a JSON Mango selector, `limit`, `skip`,
 descending (`field asc` also works; the direction is case-insensitive), so
 `invoiceList(query: {sort: ["-date", "-id"], limit: 10})` is the ten newest
 invoices. An unknown field or direction is `BAD_INPUT`, and its message lists the
-fields the list can sort on. Writes go through FrontAccounting's own functions — references, audit trail,
+fields the list can sort on. Beside every such list is a count,
+`invoiceCount(query: MangoInput): Int!` and so on, for paging (see
+[Paging](#paging)). Writes go through FrontAccounting's own functions — references, audit trail,
 GL postings, hooks — in one transaction per mutation call; a batch is atomic.
 
 Rows marked *(sgw_sales extension)* are served by the `sgw_sales` FrontAccounting
@@ -105,6 +107,44 @@ $pair = $body['data']['login'];
 - The module answers `POST` at its directory (or `…/index.php`). Anything else is
   JSON too: 405 for another method, 404 for another path — except a browser's `GET`
   (below).
+
+### Paging
+
+A list is a plain array: a page exactly `limit` long might be the last one, and
+a list says nothing of how many rows match. Beside every list that takes a
+`query` is `<entity>Count(query: MangoInput): Int!` (`allocationCount`,
+`bankAccountCount`, `branchCount`, `contactCount`, `creditStatusCount`,
+`currencyCount`, `customerCount`, `customerPaymentCount`, `deliveryCount`,
+`deliveryLineCount`, `invoiceCount`, `invoiceLineCount`, `locationCount`,
+`paymentTermsCount`, `salesAreaCount`, `salesOrderCount`, `salesOrderLineCount`,
+`salesTypeCount`, `salesmanCount`, `shipperCount`, `stockItemCount`,
+`taxGroupCount`). It counts the rows the list returns for the same query with no
+limit:
+
+- the same `selector`, matched as the list matches it (text as you read it);
+- the same rows the list can see, such as invoices only, not payments, or only
+  contacts linked to a customer or branch;
+- the same access: a role that cannot read `customerList` is refused
+  `customerCount` with `FORBIDDEN`, and a bad selector is `BAD_INPUT`;
+- `limit`, `skip` and `sort` are ignored, so the page's own query can be passed
+  as it is.
+
+Ask for the page and the total in one request:
+
+```graphql
+query ($q: MangoInput) {
+  invoiceList(query: $q) { id reference date total }
+  invoiceCount(query: $q)
+}
+```
+
+with `{"q": {"selector": "{\"customerId\": \"1\"}", "sort": ["-date", "-id"], "limit": 50, "skip": 100}}`.
+There are more pages while `skip` plus the rows returned is less than the count.
+The two fields are read one after the other, not in one snapshot, so a row
+written between them can make them differ by that row.
+
+`recurringDueList` (sgw_sales) takes no `query` and is not paged, so it has no
+count: the length of its result is the count.
 
 ### Browsing the schema
 

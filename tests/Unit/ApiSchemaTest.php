@@ -59,13 +59,18 @@ class ApiSchemaTest extends TestCase
         $schema = $this->schema();
         $query = array_keys($schema->getQueryType()->getFields());
         sort($query);
-        $expected = [
-            'allocationList', 'apiVersion', 'bankAccountList', 'branchList', 'contactList', 'creditStatusList',
-            'currencyList', 'customerList', 'customerPaymentList', 'deliveryLineList', 'deliveryList',
-            'invoiceLineList', 'invoiceList', 'locationList',
-            'me', 'paymentTermsList', 'salesAreaList', 'salesOrderLineList', 'salesOrderList', 'salesTypeList',
-            'salesmanList', 'shipperList', 'stockItemList', 'taxGroupList',
+        $lists = [
+            'allocation', 'bankAccount', 'branch', 'contact', 'creditStatus', 'currency', 'customer',
+            'customerPayment', 'deliveryLine', 'delivery', 'invoiceLine', 'invoice', 'location', 'paymentTerms',
+            'salesArea', 'salesOrderLine', 'salesOrder', 'salesType', 'salesman', 'shipper', 'stockItem',
+            'taxGroup',
         ];
+        $expected = ['apiVersion', 'me'];
+        foreach ($lists as $entity) {
+            // Issue #17: every list has a count beside it.
+            $expected[] = $entity . 'List';
+            $expected[] = $entity . 'Count';
+        }
         sort($expected);
 
         $this->assertSame($expected, $query);
@@ -98,6 +103,32 @@ class ApiSchemaTest extends TestCase
         $this->assertStringNotContainsString('SalesTypeInput', $sdl);
         $this->assertStringNotContainsString('salesTypeUpsert', $sdl);
         $this->assertStringNotContainsString('salesTypeDelete', $sdl);
+    }
+
+    /**
+     * Issue #17: <entity>Count(query: MangoInput): Int! beside every <entity>List that
+     * takes a query, so a client paging a list can learn its total.
+     */
+    public function testEveryListWithAQueryHasACountBesideIt(): void
+    {
+        $fields = $this->schema()->getQueryType()->getFields();
+        $lists = 0;
+        foreach ($fields as $name => $field) {
+            if (substr($name, -4) !== 'List' || $field->getArg('query') === null) {
+                continue;
+            }
+            $lists++;
+            $countName = substr($name, 0, -4) . 'Count';
+            $this->assertArrayHasKey($countName, $fields, $name);
+            $count = $fields[$countName];
+            $this->assertSame('Int!', (string) $count->getType(), $countName);
+            $this->assertSame(['query'], array_map(function ($arg): string {
+                return $arg->name;
+            }, $count->args), $countName);
+            $this->assertSame('MangoInput', (string) $count->getArg('query')->getType(), $countName);
+            $this->assertStringContainsString($name, (string) $count->description, $countName);
+        }
+        $this->assertSame(22, $lists);
     }
 
     public function testQueryAndMutationFieldsAreAlphabetical(): void
