@@ -21,7 +21,8 @@ areas apply; one company per request; every response is JSON.
 | Authentication | `me`, `apiVersion` | `login`, `tokenRefresh`, `tokenRevoke`; long-lived machine tokens issued by `bin/fa-token` |
 | Reference data | `paymentTermsList`, `taxGroupList`, `salesAreaList`, `salesmanList`, `locationList`, `shipperList`, `creditStatusList`, `currencyList`, `stockItemList`, `salesTypeList`, `bankAccountList` | — (read-only) |
 | Customers | `customerList` (with `branches`, `contacts`, `balance`), `branchList`, `contactList` | `customerCreate`/`Update`/`Delete` (create adds the default branch and contact), `branchCreate`/`Update`/`Delete`, `contactCreate`/`Update`/`Delete` |
-| Sales orders | `salesOrderList` (with `lines`, `recurring`), `salesOrderLineList` | `salesOrderCreate`/`Update` (version-checked)/`Delete` (FrontAccounting's cancel: deleted, or closed once delivered) |
+| Sales orders | `salesOrderList` (with `lines`, `recurring`), `salesOrderLineList` | `salesOrderCreate`/`Update` (version-checked; an existing line may switch to another item, keeping its id)/`Delete` (FrontAccounting's cancel: deleted, or closed once delivered) |
+| Pricing | `priceQuote(stockId, customerId, salesTypeId)` — FrontAccounting's `get_price()` for a customer, a price list or the base list; `price` is null when unpriced | — |
 | Recurring schedules (sgw_sales extension) | `recurring` on sales orders — from the `sgw_sales` extension, when it is active for the company | nested `recurring` input on the order mutations (the same extension) |
 | Recurring invoices (sgw_sales extension) | `recurringDueList(asOf)` | `recurringGenerate` (deliver, invoice and optionally email each due order; items independent) |
 | Deliveries | `deliveryList`, `deliveryLineList` | `deliveryCreate` (whole or partial), `deliveryDelete` (void) |
@@ -52,7 +53,8 @@ extension through this module's extension contract, only for companies where
 `sgw_sales` is active; see [Extensions](#extensions).
 
 Not yet: credit notes, quotations, direct and prepayment invoices, accounts
-payable, general ledger and banking, inventory maintenance. See the roadmap.
+payable, general ledger and banking, inventory maintenance (items, price lists and
+prices: next). See the roadmap.
 
 ## Calling the API
 
@@ -336,6 +338,37 @@ $order = $body['data']['salesOrderCreate'][0];   // keep $order['version'] for u
 
 `HOSTING-M` is illustrative: use a stock id from your own items (the demo
 company has none by that name).
+
+### Pricing
+
+`priceQuote(stockId: String!, customerId: ID, salesTypeId: ID): PriceQuote!` returns
+what FrontAccounting's `get_price()` gives for an item today. `PriceQuote` is
+`{stockId, price, currency, salesTypeId}`. It needs **Sales orders edition**
+(`SA_SALESORDER`), the area order entry needs to price a line.
+
+| Given | Price list | Currency |
+|---|---|---|
+| `customerId` | the customer's | the customer's |
+| `salesTypeId` | that list | the home currency |
+| both | `salesTypeId` | the customer's |
+| neither | the base list | the home currency |
+
+- **`price` is null when there is no price**, and `0` when the item is priced at 0.
+  The item has no price on the list or the base list, in the currency or the home
+  currency, and FrontAccounting would not price it from cost.
+- An unknown item, customer or list is `NOT_FOUND`. With neither id and no base
+  list set, it is `BAD_INPUT`. Kits are not quoted: `stockId` is a stock item.
+- **A line may switch to another item.** In `salesOrderUpdate`, send the line with
+  its `id` and a different `stockId`. The line keeps its id. It is repriced from the
+  order's price list unless you send `unitPrice`. A kit, or a code that is not a
+  stock item, is refused. A line with deliveries can switch only on a recurring
+  order; past deliveries keep their item.
+- **A switch to an item whose description is not editable replaces the line's
+  description** with the item's. Items that clients switch lines to should have
+  editable descriptions.
+- **`SalesOrder.salesTypeId` and `currency`** are the list and currency a switch
+  prices on. So `priceQuote(stockId, customerId, salesTypeId: <the order's>)` is what
+  a switch will charge.
 
 ### Deliveries and invoices
 
