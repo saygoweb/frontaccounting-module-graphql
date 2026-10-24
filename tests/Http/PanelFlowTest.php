@@ -268,6 +268,62 @@ class PanelFlowTest extends TestCase
         $this->assertSame(0, (int) $schedules->fetchColumn(), 'the recurring row goes with its order');
     }
 
+    public function testASwitchedLineReadsBackOnTheNewItemAtTheOrdersPrice(): void
+    {
+        $customer = $this->createCustomer();
+        $order = $this->createRecurringOrder($customer);
+        $lineId = $order['lines'][0]['id'];
+
+        $listed = $this->ok(
+            'query ($q: MangoInput) { salesOrderList(query: $q) { id version lines { id description } } }',
+            ['q' => ['selector' => json_encode(['id' => (int) $order['id']])]]
+        )['salesOrderList'][0];
+        $this->assertSame($lineId, $listed['lines'][0]['id']);
+
+        $this->ok(self::ORDER_UPDATE, ['in' => [[
+            'id' => $order['id'],
+            'version' => $listed['version'],
+            'lines' => [[
+                'id' => $lineId, 'stockId' => '101', 'quantity' => 2,
+                'description' => $listed['lines'][0]['description'],
+            ]],
+        ]]]);
+
+        $read = $this->ok(
+            'query ($q: MangoInput) { salesOrderList(query: $q) '
+            . '{ salesTypeId currency lines { id stockId description quantity unitPrice } } }',
+            ['q' => ['selector' => json_encode(['id' => (int) $order['id']])]]
+        )['salesOrderList'][0];
+        $line = $read['lines'][0];
+
+        $quote = $this->ok(
+            'query ($c: ID, $t: ID) { priceQuote(stockId: "101", customerId: $c, salesTypeId: $t) '
+            . '{ price currency } }',
+            ['c' => $customer['id'], 't' => $read['salesTypeId']]
+        )['priceQuote'];
+        $customerRow = $this->ok(
+            'query ($q: MangoInput) { customerList(query: $q) { id currencyId } }',
+            ['q' => ['selector' => json_encode(['id' => (int) $customer['id']])]]
+        )['customerList'][0];
+
+        $this->assertCount(1, $read['lines']);
+        $this->assertSame($lineId, $line['id'], 'the line keeps its id');
+        $this->assertSame('101', $line['stockId']);
+        $this->assertEquals(300, $quote['price'], 'Retail, list 1, USD');
+        $this->assertEquals($quote['price'], $line['unitPrice'], 'a switch charges what priceQuote quotes');
+        $this->assertEquals(2, $line['quantity']);
+        $this->assertSame($customerRow['currencyId'] ?: 'USD', $read['currency']);
+        $this->assertSame($quote['currency'], $read['currency']);
+
+        $lines = $this->ok(
+            'query ($q: MangoInput) { salesOrderLineList(query: $q) { id stockId unitPrice } }',
+            ['q' => ['selector' => json_encode(['id' => (int) $lineId])]]
+        )['salesOrderLineList'];
+        $this->assertCount(1, $lines);
+        $this->assertSame('101', $lines[0]['stockId']);
+        $this->assertEquals($line['unitPrice'], $lines[0]['unitPrice']);
+    }
+
     public function testADeliveredOrderIsClosedNotDeleted(): void
     {
         $order = $this->createRecurringOrder($this->createCustomer());

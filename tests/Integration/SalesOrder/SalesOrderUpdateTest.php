@@ -133,18 +133,6 @@ class SalesOrderUpdateTest extends SalesOrderTestCase
         $this->refused($orderNo, ['lines' => []], BadInput::class, 'lines');
     }
 
-    public function testALinesItemCannotChange(): void
-    {
-        $orderNo = $this->createOrder();
-
-        $this->refused(
-            $orderNo,
-            ['lines' => [['id' => $this->lineIds($orderNo)[0], 'stockId' => '102', 'quantity' => 1.0]]],
-            BadInput::class,
-            'lines.0.stockId'
-        );
-    }
-
     public function testANewLineNeedsAnItemAndAQuantity(): void
     {
         $orderNo = $this->createOrder();

@@ -31,6 +31,11 @@ class ApiSchemaTest extends TestCase
         $sdl = SchemaPrinter::doPrint($this->schema());
 
         $this->assertStringContainsString('apiVersion: String!', $sdl);
+        $this->assertStringContainsString(
+            'priceQuote(stockId: String!, customerId: ID, salesTypeId: ID): PriceQuote!',
+            $sdl
+        );
+        $this->assertStringContainsString('salesTypeId: ID!', $sdl);
         $this->assertStringContainsString('me: Viewer!', $sdl);
         $this->assertStringContainsString(
             'login(company: Int = 0, user: String!, password: String!): AuthPayload!',
@@ -68,7 +73,7 @@ class ApiSchemaTest extends TestCase
             'salesArea', 'salesOrderLine', 'salesOrder', 'salesType', 'salesman', 'shipper', 'stockItem',
             'taxGroup',
         ];
-        $expected = ['apiVersion', 'me'];
+        $expected = ['apiVersion', 'me', 'priceQuote'];
         foreach ($lists as $entity) {
             // Issue #17: every list has a count beside it.
             $expected[] = $entity . 'List';

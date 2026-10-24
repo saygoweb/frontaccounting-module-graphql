@@ -210,6 +210,30 @@ class MachineTokenFlowTest extends TestCase
         )->stdout);
     }
 
+    /**
+     * Items and prices spec §7: the Panel's own priceQuote document, with the Panel's
+     * machine token (sgwpanel, role "GraphQL Panel", which holds SA_SALESORDER). Demo
+     * data: Retail prices 101 at 300; customer 1 is USD on Retail.
+     */
+    public function testThePanelQuotesAPriceWithItsMachineToken(): void
+    {
+        $issued = $this->issue();
+
+        $response = $this->gql(
+            'query priceQuote($stockId: String!, $customerId: ID) { '
+                . 'priceQuote(stockId: $stockId, customerId: $customerId) { stockId price currency } }',
+            ['stockId' => '101', 'customerId' => '1'],
+            $issued['token']
+        );
+
+        $this->assertSame(200, $response['status'], $response['raw']);
+        $this->assertArrayNotHasKey('errors', $response['body'], $response['raw']);
+        $quote = $response['body']['data']['priceQuote'];
+        $this->assertSame('101', $quote['stockId']);
+        $this->assertEqualsWithDelta(300.0, $quote['price'], 0.001);
+        $this->assertSame('USD', $quote['currency']);
+    }
+
     public function testReadOnlyMachineTokenQueriesButCannotMutate(): void
     {
         $issued = $this->issue('sgwpanel', 1, ['--read-only']);
