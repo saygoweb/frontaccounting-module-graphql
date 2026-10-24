@@ -5,6 +5,7 @@ namespace FA\GraphQL\Tests\Integration\SalesOrder;
 use FA\GraphQL\Error\BadInput;
 use FA\GraphQL\Fa\Service\PriceQuoteService;
 use FA\GraphQL\Fa\Service\ServiceCall;
+use FA\GraphQL\Fa\Warnings;
 use FA\GraphQL\Tests\Support\Extension\FakeExtension;
 use FA\GraphQL\Tests\Support\Extension\FakeHooks;
 use FA\GraphQL\Tests\Support\Extension\RecordingParticipant;
@@ -182,6 +183,83 @@ class LineSwitchTest extends SalesOrderTestCase
         [$id] = $this->lineIds($orderNo);
 
         $this->refused($orderNo, [['id' => $id, 'stockId' => 'NOPE', 'quantity' => 1.0]], 'lines.0.stockId');
+    }
+
+    /** addToOrder()'s warning (sales_order_entry.php), for a switch onto another line's item. */
+    public function testASwitchToAnItemOnAnotherLineWarns(): void
+    {
+        $orderNo = $this->createOrder(['lines' => [
+            ['stockId' => '101', 'quantity' => 1.0],
+            ['stockId' => '103', 'quantity' => 1.0],
+        ]]);
+        [$first, $second] = $this->lineIds($orderNo);
+        Warnings::reset();
+
+        $this->update($orderNo, [
+            ['id' => $first, 'stockId' => '101', 'quantity' => 1.0],
+            ['id' => $second, 'stockId' => '101', 'quantity' => 1.0],
+        ]);
+
+        $this->assertSame(['101', '101'], array_column($this->lineRows($orderNo), 'stk_code'));
+        $this->assertContains(
+            'For Part :101 This item is already on this document. You have been warned.',
+            Warnings::all(),
+            json_encode(Warnings::all())
+        );
+    }
+
+    public function testASwitchToAnItemOnNoOtherLineDoesNotWarn(): void
+    {
+        $orderNo = $this->createOrder(['lines' => [
+            ['stockId' => '202', 'quantity' => 1.0, 'unitPrice' => 10.0],
+            ['stockId' => '103', 'quantity' => 1.0],
+        ]]);
+        [$first, $second] = $this->lineIds($orderNo);
+        Warnings::reset();
+
+        $this->update($orderNo, [
+            ['id' => $first, 'stockId' => '202', 'quantity' => 1.0],
+            ['id' => $second, 'stockId' => '101', 'quantity' => 1.0],
+        ]);
+
+        $this->assertEmpty(array_filter(Warnings::all(), static function (string $w): bool {
+            return strpos($w, 'already on this document') !== false;
+        }), json_encode(Warnings::all()));
+    }
+
+    /**
+     * get_item() inner-joins item_tax_types, so line_details' constructor builds an
+     * invalid line (no stock_id) for an item whose tax type is gone: refused as
+     * add_to_cart() refuses it (cart_class.inc :415), not written as an empty line.
+     */
+    public function testASwitchToAnItemWithADanglingTaxTypeIsRefused(): void
+    {
+        $code = 'ZZBADTAX' . bin2hex(random_bytes(3));
+        $pdo = $this->pdo();
+        $pdo->exec('CREATE TEMPORARY TABLE zz_item SELECT * FROM 0_stock_master WHERE stock_id = \'202\'');
+        $pdo->prepare('UPDATE zz_item SET stock_id = ?, tax_type_id = 999999')->execute([$code]);
+        $pdo->exec('INSERT INTO 0_stock_master SELECT * FROM zz_item');
+        $pdo->prepare(
+            'INSERT INTO 0_item_codes (item_code, stock_id, description, category_id, quantity, is_foreign, inactive)'
+                . ' SELECT ?, ?, description, category_id, quantity, is_foreign, inactive'
+                . ' FROM 0_item_codes WHERE item_code = \'202\' AND stock_id = \'202\''
+        )->execute([$code, $code]);
+
+        try {
+            $orderNo = $this->createOrder(['lines' => [['stockId' => '103', 'quantity' => 1.0]]]);
+            [$id] = $this->lineIds($orderNo);
+
+            $e = $this->refused(
+                $orderNo,
+                [['id' => $id, 'stockId' => $code, 'quantity' => 1.0, 'unitPrice' => 10.0]],
+                'lines.0.stockId'
+            );
+            $this->assertSame('You have to enter valid stock code or nonempty description', $e->getMessage());
+            $this->assertSame('103', $this->lineRows($orderNo)[0]['stk_code']);
+        } finally {
+            $pdo->prepare('DELETE FROM 0_item_codes WHERE stock_id = ?')->execute([$code]);
+            $pdo->prepare('DELETE FROM 0_stock_master WHERE stock_id = ?')->execute([$code]);
+        }
     }
 
     public function testADeliveredLineCannotSwitch(): void

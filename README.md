@@ -364,11 +364,16 @@ what FrontAccounting's `get_price()` gives for an item today. `PriceQuote` is
   stock item, is refused. A line with deliveries can switch only on a recurring
   order; past deliveries keep their item.
 - **A switch to an item whose description is not editable replaces the line's
-  description** with the item's. Items that clients switch lines to should have
-  editable descriptions.
+  description** with the item's. Every item the Panel switches lines to (`DOM-*` and
+  the plan items) must have an editable description: `stock_master.editable` = 1,
+  "Editable description" on FrontAccounting's item page.
 - **`SalesOrder.salesTypeId` and `currency`** are the list and currency a switch
   prices on. So `priceQuote(stockId, customerId, salesTypeId: <the order's>)` is what
-  a switch will charge.
+  a switch will charge, with one difference: the switch prices at the order's date,
+  the quote at today's. They differ only for a foreign-currency customer, when the
+  exchange rate has changed since the order's date.
+- **A switch to an item already on another line of the order** is made, with
+  FrontAccounting's warning that the item is already on the document.
 
 ### Deliveries and invoices
 

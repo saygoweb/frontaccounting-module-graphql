@@ -852,8 +852,16 @@ class SalesOrderService
             );
         }
         $this->warnIfBelowCost($cart, $stockId, $price);
+        // addToOrder()'s warning, against the order's other lines.
+        foreach ($cart->line_items as $other) {
+            if ($other !== $line && strcasecmp($other->stock_id, $stockId) == 0) {
+                display_warning(_('For Part :') . $stockId . ' '
+                    . _('This item is already on this document. You have been warned.'));
+                break;
+            }
+        }
 
-        return new \line_details(
+        $new = new \line_details(
             $stockId,
             $quantity,
             $price,
@@ -865,5 +873,12 @@ class SalesOrderService
             $line->src_no,
             $line->src_id
         );
+        // get_item() inner-joins item_tax_types: an item with a dangling tax type gives
+        // an invalid line, which add_to_cart() refuses (cart_class.inc :411-416).
+        if (empty($new->valid)) {
+            throw new BadInput('You have to enter valid stock code or nonempty description', "$field.stockId");
+        }
+
+        return $new;
     }
 }
