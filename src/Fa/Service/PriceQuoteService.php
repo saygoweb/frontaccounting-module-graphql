@@ -25,7 +25,11 @@ class PriceQuoteService
     public function quote(string $stockId, ?int $customerId = null, ?int $salesTypeId = null): array
     {
         FaIncludes::customers();
-        $stockId = self::stockId($stockId);
+        $item = StockItems::canonicalId($stockId);
+        if ($item === null) {
+            throw new NotFound("There is no item '$stockId'.");
+        }
+        $stockId = $item;
 
         $currency = get_company_currency();
         $listId = null;
@@ -54,6 +58,16 @@ class PriceQuoteService
             }
         }
 
+        // get_price() would convert at rate 1 when there is no rate, and only
+        // display_error(); order entry refuses the order (SalesOrderService::
+        // assertCurrencyRate()), so a quote does too.
+        if ($currency !== get_company_currency() && !db_has_currency_rates($currency, \Today())) {
+            throw new BadInput(
+                sprintf('There is no exchange rate for %s as of %s.', $currency, \Today()),
+                'customerId'
+            );
+        }
+
         return [
             'stockId' => $stockId,
             'price' => self::hasPrice($stockId, $currency, $listId)
@@ -62,23 +76,6 @@ class PriceQuoteService
             'currency' => $currency,
             'salesTypeId' => $listId,
         ];
-    }
-
-    /**
-     * The item's code as stock_master spells it. A kit or a foreign code has
-     * item_codes rows but no stock_master row, and is not an item here.
-     */
-    private static function stockId(string $stockId): string
-    {
-        $row = db_fetch(db_query(
-            'SELECT stock_id FROM ' . TB_PREF . 'stock_master WHERE stock_id = ' . db_escape($stockId),
-            'could not read the item'
-        ));
-        if (!$row) {
-            throw new NotFound("There is no item '$stockId'.");
-        }
-
-        return (string) $row['stock_id'];
     }
 
     /**

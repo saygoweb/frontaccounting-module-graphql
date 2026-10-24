@@ -72,6 +72,20 @@ class LineSwitchTest extends SalesOrderTestCase
         $this->assertSame('iPad Air 2 16GB', $line['description'], 'a non-editable item brings its own');
     }
 
+    /** Spec §3.2: a non-editable item takes its own description, whatever is sent. */
+    public function testASwitchToANonEditableItemIgnoresTheGivenDescription(): void
+    {
+        $orderNo = $this->createOrder(['lines' => [['stockId' => '103', 'quantity' => 1.0]]]);
+        [$id] = $this->lineIds($orderNo);
+
+        $this->update($orderNo, [[
+            'id' => $id, 'stockId' => '101', 'quantity' => 1.0,
+            'description' => 'Domain Registration - example.nz',
+        ]]);
+
+        $this->assertSame('iPad Air 2 16GB', $this->lineRows($orderNo)[0]['description']);
+    }
+
     public function testASwitchWithAPriceKeepsThatPrice(): void
     {
         $orderNo = $this->createOrder(['lines' => [['stockId' => '103', 'quantity' => 1.0]]]);
@@ -116,6 +130,22 @@ class LineSwitchTest extends SalesOrderTestCase
         $this->update($orderNo, [['id' => $id, 'stockId' => '103', 'quantity' => 1.0]]);
 
         $this->assertEquals(7, $this->lineRows($orderNo)[0]['unit_price'], 'kept, not repriced');
+    }
+
+    /**
+     * MySQL's collation finds '103' for '103 ' where strcasecmp() does not: whether a
+     * line is switched is decided on the code stock_master has.
+     */
+    public function testResendingTheSameItemSpelledDifferentlyIsNotASwitch(): void
+    {
+        $orderNo = $this->createOrder(['lines' => [['stockId' => '103', 'quantity' => 1.0, 'unitPrice' => 7.0]]]);
+        [$id] = $this->lineIds($orderNo);
+
+        $this->update($orderNo, [['id' => $id, 'stockId' => '103 ', 'quantity' => 1.0]]);
+
+        $line = $this->lineRows($orderNo)[0];
+        $this->assertSame('103', $line['stk_code']);
+        $this->assertEquals(7, $line['unit_price'], 'kept, not repriced');
     }
 
     public function testUnchangedLinesKeepTheirPriceWithOrWithoutUnitPrice(): void
@@ -163,6 +193,16 @@ class LineSwitchTest extends SalesOrderTestCase
         $this->refused($orderNo, [['id' => $id, 'stockId' => '101', 'quantity' => 2.0]], 'lines.0.stockId');
     }
 
+    public function testADeliveredLineSwitchedBelowItsDeliveriesIsRefusedOnTheItem(): void
+    {
+        $orderNo = $this->createOrder(['lines' => [['stockId' => '103', 'quantity' => 2.0]]]);
+        [$id] = $this->lineIds($orderNo);
+        $this->deliver($orderNo, [$id => 2.0]);
+
+        $e = $this->refused($orderNo, [['id' => $id, 'stockId' => '101', 'quantity' => 1.0]], 'lines.0.stockId');
+        $this->assertSame("Line $id has been delivered: its item cannot change.", $e->getMessage());
+    }
+
     public function testADeliveredLineOfARelaxedOrderSwitches(): void
     {
         $orderNo = $this->createOrder(['lines' => [['stockId' => '103', 'quantity' => 2.0]]]);
@@ -206,8 +246,8 @@ class LineSwitchTest extends SalesOrderTestCase
     public function testTheOrderReadsItsCustomersCurrency(): void
     {
         $orderNo = $this->createOrder();
+        $customerId = (int) $this->orderRow($orderNo)['debtor_no'];
 
-        $this->assertSame('USD', SalesOrderType::currencyOf(1, $this->container));
-        $this->assertNotNull($this->orderRow($orderNo));
+        $this->assertSame('USD', SalesOrderType::currencyOf($customerId, $this->container));
     }
 }

@@ -746,7 +746,7 @@ class SalesOrderService
             }
             $line = $existing[$id];
             unset($existing[$id]);
-            if (self::given($given, 'stockId') && strcasecmp((string) $given['stockId'], $line->stock_id) !== 0) {
+            if (self::given($given, 'stockId') && self::isSwitch((string) $given['stockId'], $line->stock_id)) {
                 $kept[] = $this->switchItem($cart, $line, $given, $field, $relaxed);
                 continue;
             }
@@ -792,6 +792,22 @@ class SalesOrderService
     }
 
     /**
+     * Whether a line's given code names another item. strcasecmp() alone would call
+     * '103 ' a switch from '103', though MySQL's collation finds '103' for it; so a
+     * code that differs is looked up, and its stock_master spelling decides. An
+     * unknown code or a kit is a switch, for switchItem() to refuse.
+     */
+    private static function isSwitch(string $code, string $stockId): bool
+    {
+        if (strcasecmp($code, $stockId) === 0) {
+            return false;
+        }
+        $canonical = StockItems::canonicalId($code);
+
+        return $canonical === null || strcasecmp($canonical, $stockId) !== 0;
+    }
+
+    /**
      * A line moved to another item in place (Items and prices spec §3.2): rebuilt as a
      * line_details for the new item with the same id, which update_sales_order() writes
      * to the same row (sales_order_db.inc :186-198). Priced as a new line is (addLine())
@@ -815,18 +831,15 @@ class SalesOrderService
             ? (float) $given['discountPercent']
             : (float) $line->discount_percent * 100;
         $price = self::given($given, 'unitPrice') ? (float) $given['unitPrice'] : null;
-        $this->checkLine($code, $quantity, $price, $discount, $field, (float) $line->qty_done, $relaxed);
-
-        $item = db_fetch(db_query(
-            'SELECT stock_id FROM ' . TB_PREF . 'stock_master WHERE stock_id = ' . db_escape($code),
-            'could not read the item'
-        ));
-        if (!$item) {
-            throw new BadInput('A line can only change to a stock item, not a kit.', "$field.stockId");
-        }
-        $stockId = (string) $item['stock_id'];
+        // Before checkLine(): a quantity below the deliveries is the lesser complaint.
         if (!$relaxed && (float) $line->qty_done != 0) {
             throw new BadInput("Line {$line->id} has been delivered: its item cannot change.", "$field.stockId");
+        }
+        $this->checkLine($code, $quantity, $price, $discount, $field, (float) $line->qty_done, $relaxed);
+
+        $stockId = StockItems::canonicalId($code);
+        if ($stockId === null) {
+            throw new BadInput('A line can only change to a stock item, not a kit.', "$field.stockId");
         }
 
         if ($price === null) {

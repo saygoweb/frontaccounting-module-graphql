@@ -22,6 +22,9 @@ class PriceQuoteServiceTest extends SalesOrderTestCase
     /** @var int[] prices rows this test added */
     private array $priceIds = [];
 
+    /** @var array<int, array<string, mixed>> exchange_rates rows this test removed */
+    private array $removedRates = [];
+
     protected function tearDown(): void
     {
         $pdo = FaTestRows::connect();
@@ -29,7 +32,22 @@ class PriceQuoteServiceTest extends SalesOrderTestCase
             $pdo->prepare('DELETE FROM 0_prices WHERE id = ?')->execute([$id]);
         }
         $this->priceIds = [];
+        foreach ($this->removedRates as $rate) {
+            $pdo->prepare(
+                'INSERT INTO 0_exchange_rates (id, curr_code, rate_buy, rate_sell, date_) VALUES (?, ?, ?, ?, ?)'
+            )->execute([$rate['id'], $rate['curr_code'], $rate['rate_buy'], $rate['rate_sell'], $rate['date_']]);
+        }
+        $this->removedRates = [];
         parent::tearDown();
+    }
+
+    private function removeRates(string $currency): void
+    {
+        $pdo = FaTestRows::connect();
+        $statement = $pdo->prepare('SELECT * FROM 0_exchange_rates WHERE curr_code = ?');
+        $statement->execute([$currency]);
+        $this->removedRates = $statement->fetchAll(\PDO::FETCH_ASSOC);
+        $pdo->prepare('DELETE FROM 0_exchange_rates WHERE curr_code = ?')->execute([$currency]);
     }
 
     private function addPrice(string $stockId, int $salesTypeId, string $currency, float $price): void
@@ -93,6 +111,23 @@ class PriceQuoteServiceTest extends SalesOrderTestCase
         $this->assertSame('EUR', $quote['currency']);
         $this->assertNotNull($quote['price']);
         $this->assertEqualsWithDelta((float) get_price('101', 'EUR', 1, null, \Today()), $quote['price'], 0.001);
+    }
+
+    /**
+     * get_exchange_rate_from_home_currency() would price at rate 1 and only
+     * display_error(); order entry refuses such an order (assertCurrencyRate()).
+     */
+    public function testAForeignCurrencyWithNoExchangeRateIsBadInput(): void
+    {
+        $this->removeRates('EUR');
+
+        try {
+            $this->quotes()->quote('101', 2);
+            $this->fail('quoted at rate 1');
+        } catch (BadInput $e) {
+            $this->assertSame('customerId', $e->field());
+            $this->assertSame(sprintf('There is no exchange rate for EUR as of %s.', \Today()), $e->getMessage());
+        }
     }
 
     public function testAnUnpricedItemIsNullNotZero(): void

@@ -6,6 +6,7 @@ use Anorm\GraphQL\GraphQLUtils;
 use Anorm\GraphQL\Type\MangoInput;
 use DI\Container;
 use FA\GraphQL\Auth\Guard;
+use FA\GraphQL\Fa\FaText;
 use FA\GraphQL\Fa\Service\IntKey;
 use FA\GraphQL\Fa\Service\InvoiceMailer;
 use FA\GraphQL\Fa\Service\PriceQuoteService;
@@ -195,8 +196,10 @@ class ApiSchema extends Schema
                                 ? IntKey::parse($args['salesTypeId'], 'salesTypeId')
                                 : null;
 
+                            // Cleaned as a mutation's input is (ServiceCall::each()), so the
+                            // code matches as a line's stockId does.
                             return $this->type(PriceQuoteService::class)
-                                ->quote($args['stockId'], $customerId, $salesTypeId);
+                                ->quote(FaText::clean($args['stockId']), $customerId, $salesTypeId);
                         },
                     ],
                     $this->countField('salesAreaCount', SalesAreaType::class),
