@@ -1,6 +1,6 @@
 # Inventory: items and prices — design
 
-Status: draft, 2026-10-25, for review by the saygoweb.com-my pricing session
+Status: approved by the pricing session 2026-10-25 (with §3.3's `currency` and §3.2's editable note added), for review by the saygoweb.com-my pricing session
 (Panel spec `2026-10-24-accounting-pricing-design.md`, "spec 2"; this is its
 "spec 1"). Built in three releases, in order: **A** (unblocks Panel PR #132),
 **B** (for Panel spec 3, the Admin pricing UI), **C** (batched quotes).
@@ -108,6 +108,12 @@ today) is switched in place:
   same call `addLine()` makes, so the line is priced from the customer's list.
 - **Description.** The given `description` when sent and the new item is editable.
   Otherwise the new item's description (the `line_details` constructor's rule).
+  **So an item whose description is not editable replaces the line's description
+  with its own.** The Panel matches lines back to domains and plans by description
+  ("Domain Registration - <domain>", "Hosting - <name>"), so every `DOM-*` and plan
+  item must be editable (`stock_master.editable` = 1). Release B's
+  `stockItemCreate` makes items editable; the items created by hand for Release
+  A's rollout (Panel spec §10 step 2) must be created editable too (§6).
 - **Quantity, discount.** The given ones, else the line's.
 - **Checks.** `checkLine()` on the new item, as for any line. The below-cost warning
   applies as on a new line.
@@ -124,8 +130,20 @@ Every other line rule is unchanged (§2).
 
 ### 3.3 Reads
 
-None. Tests pin `salesOrderList { lines { id stockId description quantity
-unitPrice } }`, and `salesOrderLineList` likewise, after a switch.
+`SalesOrder` already has `salesTypeId` (`sales_orders.order_type`). It gains
+`currency: String!`, the customer's `curr_code`. FA keeps no currency on the order:
+`read_sales_order()` takes the customer's, and FA refuses to change a customer's
+currency once it has transactions. Together they are the list and currency a
+switched line is repriced on (§3.2: the cart's list is the order's, with that
+list's factor, not the customer's current list). So the Panel quotes
+`priceQuote(stockId, customerId, salesTypeId: <the order's salesTypeId>)` (§3.1's
+"both" row) and gets the price a switch will charge, even after the customer has
+moved to another list. One difference remains: the switch prices at the order's date
+and the quote at today's. Only the exchange rate depends on the date, so this
+matters only for a foreign-currency customer, and never under NZD only (P10).
+
+Tests pin `salesOrderList { salesTypeId currency lines { id stockId description
+quantity unitPrice } }`, and `salesOrderLineList` likewise, after a switch.
 
 ### 3.4 Panel parity
 
@@ -190,6 +208,8 @@ call, as other batches do, and the error carries the index. At most 200 items.
   released (`fa:*` scripts and the release workflow). Release A is v1.3.0.
 - Release A's deploy check, on live before the Panel deploys: the `sgwpanel`
   user's role holds `SA_SALESORDER`, and `priceQuote(stockId: "HGEN1")` answers.
+- Release A's rollout note (README and release notes): items the Panel switches
+  lines to must have editable descriptions (§3.2).
   The pricing session is told the version and the PR link.
 - README: the coverage table gains a "Pricing" row (A), then "Items and price
   lists" (B). The roadmap's "inventory maintenance" gap narrows.
@@ -207,7 +227,11 @@ list with a factor and an override):
   it keeps a given price; it takes the new item's description; a kit is refused;
   a delivered line is refused, but allowed on a relaxed (sgw_sales recurring)
   order; unchanged lines keep their price with or without `unitPrice`; a new line
-  is priced from the list.
+  is priced from the list; a switch on an order whose customer has since moved to
+  another list is repriced from the order's list, and `priceQuote(customerId,
+  salesTypeId: <order's list>)` returns the same figure; a switch to a non-editable
+  item takes the item's description.
+- `salesOrderList`: `currency` is the customer's currency.
 - HTTP: the Panel's exact query document (§3.1) through the endpoint with a
   machine token.
 - B and C get their own test sections when they are planned.
