@@ -715,7 +715,8 @@ class SalesOrderService
 
     /**
      * The given lines replace the order's: with an id, that line updated
-     * (update_cart_item(), cart_class.inc :412-420); without, a new line (addLine());
+     * (update_cart_item(), cart_class.inc :412-420), or moved to another item
+     * (switchItem()); without, a new line (addLine());
      * omitted, deleted — unless delivered (handle_delete_item(), sales_order_entry.php
      * :591-599).
      *
@@ -746,7 +747,8 @@ class SalesOrderService
             $line = $existing[$id];
             unset($existing[$id]);
             if (self::given($given, 'stockId') && strcasecmp((string) $given['stockId'], $line->stock_id) !== 0) {
-                throw new BadInput("A line's item cannot change: remove the line and add another.", "$field.stockId");
+                $kept[] = $this->switchItem($cart, $line, $given, $field, $relaxed);
+                continue;
             }
             $quantity = self::given($given, 'quantity') ? (float) $given['quantity'] : (float) $line->quantity;
             $price = self::given($given, 'unitPrice') ? (float) $given['unitPrice'] : (float) $line->price;
@@ -787,5 +789,68 @@ class SalesOrderService
             }
             $this->addLine($cart, $given, 'lines.' . $index);
         }
+    }
+
+    /**
+     * A line moved to another item in place (Items and prices spec §3.2): rebuilt as a
+     * line_details for the new item with the same id, which update_sales_order() writes
+     * to the same row (sales_order_db.inc :186-198). Priced as a new line is (addLine())
+     * unless a price is given; the description is the given one if the new item's is
+     * editable, else the item's (line_details' constructor). A kit or foreign code would
+     * expand into several lines, and a delivered line keeps its deliveries on the old
+     * item, so both are refused, the latter unless the order is relaxed (a recurring one).
+     *
+     * @param array<string, mixed> $given a SalesOrderLineUpdateInput
+     */
+    private function switchItem(
+        \Cart $cart,
+        \line_details $line,
+        array $given,
+        string $field,
+        bool $relaxed
+    ): \line_details {
+        $code = (string) $given['stockId'];
+        $quantity = self::given($given, 'quantity') ? (float) $given['quantity'] : (float) $line->quantity;
+        $discount = self::given($given, 'discountPercent')
+            ? (float) $given['discountPercent']
+            : (float) $line->discount_percent * 100;
+        $price = self::given($given, 'unitPrice') ? (float) $given['unitPrice'] : null;
+        $this->checkLine($code, $quantity, $price, $discount, $field, (float) $line->qty_done, $relaxed);
+
+        $item = db_fetch(db_query(
+            'SELECT stock_id FROM ' . TB_PREF . 'stock_master WHERE stock_id = ' . db_escape($code),
+            'could not read the item'
+        ));
+        if (!$item) {
+            throw new BadInput('A line can only change to a stock item, not a kit.', "$field.stockId");
+        }
+        $stockId = (string) $item['stock_id'];
+        if (!$relaxed && (float) $line->qty_done != 0) {
+            throw new BadInput("Line {$line->id} has been delivered: its item cannot change.", "$field.stockId");
+        }
+
+        if ($price === null) {
+            $price = (float) get_kit_price(
+                $stockId,
+                $cart->customer_currency,
+                $cart->sales_type,
+                $cart->price_factor,
+                $cart->document_date
+            );
+        }
+        $this->warnIfBelowCost($cart, $stockId, $price);
+
+        return new \line_details(
+            $stockId,
+            $quantity,
+            $price,
+            $discount / 100,
+            $line->qty_done,
+            get_unit_cost($stockId),
+            self::given($given, 'description') ? (string) $given['description'] : null,
+            $line->id,
+            $line->src_no,
+            $line->src_id
+        );
     }
 }

@@ -9,6 +9,7 @@ use DI\Container;
 use FA\GraphQL\Extension\AcceptsContributions;
 use FA\GraphQL\Extension\ExtensibleType;
 use FA\GraphQL\Extension\Extensions;
+use FA\GraphQL\Fa\CompanyContext;
 use FA\GraphQL\Fa\Service\SalesOrderService;
 use FA\GraphQL\Fa\Service\ServiceCall;
 use FA\GraphQL\Fa\Warnings;
@@ -65,6 +66,13 @@ class SalesOrderType extends SalesOrderTypeBase implements ExtensibleType
     protected function fields(): array
     {
         return array_merge(parent::fields(), [
+            FieldBuilder::create('currency', Type::nonNull(Type::string()))
+                ->setDescription("The order's currency: its customer's. FrontAccounting keeps none on the order "
+                    . '(read_sales_order() takes the customer\'s).')
+                ->setResolver(function (array $row, $args, $context): string {
+                    return self::currencyOf((int) $row['customerId'], $context);
+                })
+                ->build(),
             FieldBuilder::create('lines', Type::nonNull(Type::listOf(Type::nonNull($this->lineType))))
                 ->setDescription('The order\'s lines, in entry order.')
                 ->setResolver(function (array $row, $args, $context): array {
@@ -132,6 +140,22 @@ class SalesOrderType extends SalesOrderTypeBase implements ExtensibleType
         }
 
         return $before;
+    }
+
+    /**
+     * A customer's currency, debtors_master.curr_code, which every one of its orders
+     * is priced and invoiced in.
+     *
+     * @param mixed $context the container
+     */
+    public static function currencyOf(int $customerId, $context): string
+    {
+        $statement = $context->get(\PDO::class)->prepare(
+            'SELECT curr_code FROM `' . CompanyContext::prefix() . 'debtors_master` WHERE debtor_no = ?'
+        );
+        $statement->execute([$customerId]);
+
+        return (string) $statement->fetchColumn();
     }
 
     /**
