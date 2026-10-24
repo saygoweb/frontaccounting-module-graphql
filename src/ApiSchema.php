@@ -6,7 +6,9 @@ use Anorm\GraphQL\GraphQLUtils;
 use Anorm\GraphQL\Type\MangoInput;
 use DI\Container;
 use FA\GraphQL\Auth\Guard;
+use FA\GraphQL\Fa\Service\IntKey;
 use FA\GraphQL\Fa\Service\InvoiceMailer;
+use FA\GraphQL\Fa\Service\PriceQuoteService;
 use FA\GraphQL\Type\Allocation\AllocationType;
 use FA\GraphQL\Type\Auth\AuthMutations;
 use FA\GraphQL\Type\Auth\AuthPayloadType;
@@ -35,6 +37,7 @@ use FA\GraphQL\Type\Invoice\InvoiceEmailResultType;
 use FA\GraphQL\Type\Invoice\InvoiceType;
 use FA\GraphQL\Type\Location\LocationType;
 use FA\GraphQL\Type\PaymentTerms\PaymentTermsType;
+use FA\GraphQL\Type\Price\PriceQuoteType;
 use FA\GraphQL\Type\SalesArea\SalesAreaType;
 use FA\GraphQL\Type\SalesOrderLine\SalesOrderLineType;
 use FA\GraphQL\Type\SalesOrder\SalesOrderCreateInput;
@@ -173,6 +176,29 @@ class ApiSchema extends Schema
                     )
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
+                    'priceQuote' => [
+                        'type' => Type::nonNull($this->type(PriceQuoteType::class)),
+                        'description' => "What FrontAccounting would charge for an item: get_price() on the "
+                            . "customer's price list in its currency, or on the given list (which wins), or on "
+                            . 'the base list. Needs SA_SALESORDER.',
+                        'args' => [
+                            'stockId' => ['type' => Type::nonNull(Type::string())],
+                            'customerId' => ['type' => Type::id()],
+                            'salesTypeId' => ['type' => Type::id()],
+                        ],
+                        'resolve' => function ($root, array $args) {
+                            Guard::require('SA_SALESORDER');
+                            $customerId = isset($args['customerId'])
+                                ? IntKey::parse($args['customerId'], 'customerId')
+                                : null;
+                            $salesTypeId = isset($args['salesTypeId'])
+                                ? IntKey::parse($args['salesTypeId'], 'salesTypeId')
+                                : null;
+
+                            return $this->type(PriceQuoteService::class)
+                                ->quote($args['stockId'], $customerId, $salesTypeId);
+                        },
+                    ],
                     $this->countField('salesAreaCount', SalesAreaType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('salesAreaList', $this->type(SalesAreaType::class), 'resolveList')
