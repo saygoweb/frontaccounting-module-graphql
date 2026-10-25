@@ -9,8 +9,9 @@ use FA\GraphQL\Db\Connection;
 use FA\GraphQL\Fa\CompanyContext;
 
 /**
- * A sales type — a price list: FrontAccounting's sales_types. Read-only through the
- * API (bin/generate lists it in READONLY). Drafted by `anorm make`, then given the
+ * A sales type — a price list: FrontAccounting's sales_types. Written only through
+ * SalesTypeService (SalesTypeType routes the generated create and update there; no
+ * delete). `@required` marks what salesTypeCreate must be given. Drafted by `anorm make`, then given the
  * conventions of spec §4.4: domain names, declared types, PHP defaults for the
  * NOT NULL DEFAULT columns, the company's prefix, and booleans that are booleans.
  */
@@ -19,7 +20,10 @@ class SalesTypeModel extends Model
     /** @var int */
     public $id;
 
-    /** @var string */
+    /**
+     * @var string
+     * @required
+     */
     public $name = '';
 
     /** @var bool Prices on this list include tax */

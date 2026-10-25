@@ -374,6 +374,15 @@ class CustomerServiceTest extends FaTestCase
         );
     }
 
+    public function testAnUpdateMovesACustomerToAnotherPriceList(): void
+    {
+        $id = $this->create($this->input());
+
+        $this->update(['id' => $id, 'salesTypeId' => '2']);
+
+        $this->assertSame('2', (string) $this->customerByRef($this->prefix . 'c')['sales_type']);
+    }
+
     public function testAnUpdateChangesWhatItNamesAndKeepsTheRest(): void
     {
         $id = $this->create($this->input(['discountPercent' => 10, 'taxNumber' => 'GB 123 4567 89']));

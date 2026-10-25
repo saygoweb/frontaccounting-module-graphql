@@ -15,6 +15,9 @@ class StockItemTypeTest extends TestCase
         return StockItemType::class;
     }
 
+    // Left null: the create and update inputs are trimmed to the item page's fields
+    // (no mbFlag or noSale), so the generic mirror check does not apply; ApiSchemaTest
+    // pins their fields, and StockItemServiceTest (Release B, Task 3) the lifecycle.
     protected function inputClass(): ?string
     {
         return null;

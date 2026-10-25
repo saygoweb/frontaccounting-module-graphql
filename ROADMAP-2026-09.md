@@ -49,8 +49,8 @@ Not started; each is its own release-sized design.
 - **General ledger and banking** — journal entries, bank deposits and payments not
   tied to customers, transfers, reconciliation, the chart of accounts, fiscal years,
   GL inquiries (trial balance).
-- **Inventory** — item and price maintenance, stock adjustments and transfers, stock
-  on hand by location (items are read-only today).
+- **Inventory** — item delete, kits and purchasing, stock adjustments and transfers,
+  stock on hand by location (item and price maintenance are done).
 - **Other FrontAccounting modules** — manufacturing (work orders), fixed assets,
   dimensions, tax reports.
 

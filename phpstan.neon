@@ -42,6 +42,8 @@ parameters:
         - ../../admin/db/company_db.inc
         - ../../includes/banking.inc
         - ../../includes/db/sql_functions.inc
+        # PriceService: get_currency.
+        - ../../gl/includes/db/gl_db_currencies.inc
         # SalesOrderService: the Cart and what it is filled with (cart_class.inc,
         # sales_order_ui.inc, sales_order_db.inc, sales_db.inc, sales_types_db.inc),
         # items and locations, fiscal years, shippers, costs.
@@ -66,3 +68,10 @@ parameters:
         - ../../sales/includes/db/payment_db.inc
         - ../../gl/includes/db/gl_db_bank_accounts.inc
         - ../../gl/includes/db/gl_db_accounts.inc
+        # StockItemService: add_item, update_item, get_item (items_db.inc),
+        # get_item_category (items_category_db.inc).
+        - ../../inventory/includes/db/items_db.inc
+        - ../../inventory/includes/db/items_category_db.inc
+        # PriceService: add_item_price, update_item_price, delete_item_price,
+        # get_stock_price_type_currency (items_prices_db.inc).
+        - ../../inventory/includes/db/items_prices_db.inc

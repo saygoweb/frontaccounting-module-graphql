@@ -19,9 +19,10 @@ areas apply; one company per request; every response is JSON.
 | Area | Queries | Mutations |
 |---|---|---|
 | Authentication | `me`, `apiVersion` | `login`, `tokenRefresh`, `tokenRevoke`; long-lived machine tokens issued by `bin/fa-token` |
-| Reference data | `paymentTermsList`, `taxGroupList`, `salesAreaList`, `salesmanList`, `locationList`, `shipperList`, `creditStatusList`, `currencyList`, `stockItemList`, `salesTypeList`, `bankAccountList` | — (read-only) |
+| Reference data | `paymentTermsList`, `taxGroupList`, `salesAreaList`, `salesmanList`, `locationList`, `shipperList`, `creditStatusList`, `currencyList`, `stockItemList`, `salesTypeList`, `bankAccountList` | — (read-only; `stockItemList` and `salesTypeList` are also written, see Items and price lists) |
 | Customers | `customerList` (with `branches`, `contacts`, `balance`), `branchList`, `contactList` | `customerCreate`/`Update`/`Delete` (create adds the default branch and contact), `branchCreate`/`Update`/`Delete`, `contactCreate`/`Update`/`Delete` |
 | Sales orders | `salesOrderList` (with `lines`, `recurring`), `salesOrderLineList` | `salesOrderCreate`/`Update` (version-checked; an existing line may switch to another item, keeping its id)/`Delete` (FrontAccounting's cancel: deleted, or closed once delivered) |
+| Items and price lists | `stockItemList`, `salesTypeList`, `priceList`, `priceCount` | `stockItemCreate`/`Update` (`SA_ITEM`), `salesTypeCreate`/`Update` (`SA_SALESTYPES`), `priceSet`/`priceDelete` (`SA_SALESPRICE`, which also reads `priceList` and `priceCount`) |
 | Pricing | `priceQuote(stockId, customerId, salesTypeId)` — FrontAccounting's `get_price()` for a customer, a price list or the base list; `price` is null when unpriced | — |
 | Recurring schedules (sgw_sales extension) | `recurring` on sales orders — from the `sgw_sales` extension, when it is active for the company | nested `recurring` input on the order mutations (the same extension) |
 | Recurring invoices (sgw_sales extension) | `recurringDueList(asOf)` | `recurringGenerate` (deliver, invoice and optionally email each due order; items independent) |
@@ -53,8 +54,8 @@ extension through this module's extension contract, only for companies where
 `sgw_sales` is active; see [Extensions](#extensions).
 
 Not yet: credit notes, quotations, direct and prepayment invoices, accounts
-payable, general ledger and banking, inventory maintenance (items, price lists and
-prices: next). See the roadmap.
+payable, general ledger and banking, and the rest of inventory maintenance (item
+delete, kits and purchasing). See the roadmap.
 
 ## Calling the API
 
@@ -221,6 +222,10 @@ under `tmp/` that the web server can no longer write:
   a separate role area; that is a later release. Its password is an unusable
   `!unusable-…` string that no `md5()` hash can equal, so it can never `login`, and
   its seeded email (`sgwpanel@invalid.invalid`) is unroutable (RFC 2606/6761).
+  Since Release B the panel's role needs SA_ITEM and SA_SALESPRICE too (the dev
+  stack seeds them), to make items and set prices; it does not get SA_SALESTYPES.
+  On a live company, granting these is the owner's call in FrontAccounting's role
+  editor.
 - **Rotate** by issuing a new token, switching the service to it, then revoking the
   old one: both work in between.
 - **Use HTTPS in production.** A machine token is as good as a password for a year;
@@ -374,6 +379,17 @@ what FrontAccounting's `get_price()` gives for an item today. `PriceQuote` is
   exchange rate has changed since the order's date.
 - **A switch to an item already on another line of the order** is made, with
   FrontAccounting's warning that the item is already on the document.
+
+- **Item defaults.** `stockItemCreate` takes the defaults of the item's category
+  for anything not sent (tax type, units, item type, the accounts, dimensions, "no
+  sale" and "no purchase"), as FrontAccounting's item page does. `editable` defaults
+  to true. There is no item delete: retire an item with `inactive`.
+- **The upsert key.** `priceSet` upserts on (`stockId`, `salesTypeId`, `currency`):
+  it adds the price, or changes the one already there. `priceDelete` takes the same
+  key.
+- **Tax-included prices.** Set explicit prices on any list whose `taxIncluded`
+  differs from the base list's. FA's fallback (base × factor) does not convert
+  between tax-included and tax-excluded prices.
 
 ### Deliveries and invoices
 
