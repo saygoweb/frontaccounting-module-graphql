@@ -110,6 +110,28 @@ SELECT 'GraphQL Panel', 'GraphQL for the hosting panel',
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM `0_security_roles` r WHERE r.`role` = 'GraphQL Panel');
 
+-- Release B (items and prices spec §6): the panel writes items (SA_ITEM) and prices
+-- (SA_SALESPRICE); not price lists (SA_SALESTYPES). On live, granting these is the
+-- owner's call in FA's role editor. Sections SS_SALES_C = 11 << 8 = 2816 and
+-- SS_ITEMS_C = 31 << 8 = 7936; SA_SALESPRICE = SS_SALES_C|2 = 2818 and SA_ITEM =
+-- SS_ITEMS_C|1 = 7937 (includes/access_levels.inc). Appended only when missing.
+
+UPDATE `0_security_roles`
+SET `sections` = CONCAT(`sections`, ';2816')
+WHERE `role` = 'GraphQL Panel' AND FIND_IN_SET('2816', REPLACE(`sections`, ';', ',')) = 0;
+
+UPDATE `0_security_roles`
+SET `sections` = CONCAT(`sections`, ';7936')
+WHERE `role` = 'GraphQL Panel' AND FIND_IN_SET('7936', REPLACE(`sections`, ';', ',')) = 0;
+
+UPDATE `0_security_roles`
+SET `areas` = CONCAT(`areas`, ';2818')
+WHERE `role` = 'GraphQL Panel' AND FIND_IN_SET('2818', REPLACE(`areas`, ';', ',')) = 0;
+
+UPDATE `0_security_roles`
+SET `areas` = CONCAT(`areas`, ';7937')
+WHERE `role` = 'GraphQL Panel' AND FIND_IN_SET('7937', REPLACE(`areas`, ';', ',')) = 0;
+
 -- It signs in only with a machine token (bin/fa-token), never with a password: the
 -- hash is a random string that no md5() can equal ('!' is not a hex digit), made
 -- afresh when the row is first inserted. Its email is unroutable

@@ -159,6 +159,53 @@ class SalesOrderUpdateTest extends SalesOrderTestCase
         $this->assertEquals(7, $lines[1]['unit_price'], 'a price given in the update wins');
     }
 
+    public function testMovingAnOrderToAnotherListWithThePanelsLineShapeReprices(): void
+    {
+        $orderNo = $this->createOrder(['lines' => [
+            ['stockId' => '101', 'quantity' => 1.0],
+            ['stockId' => '103', 'quantity' => 2.0],
+        ]]);
+        $before = $this->lineRows($orderNo);
+        [$first, $second] = $this->lineIds($orderNo);
+
+        // The Panel resends each line as it read it: id, item, description, quantity, discount; no price.
+        $this->update($orderNo, [
+            'salesTypeId' => 2,
+            'lines' => [
+                [
+                    'id' => $first,
+                    'stockId' => '101',
+                    'description' => $before[0]['description'],
+                    'quantity' => 1.0,
+                    'discountPercent' => 0.0,
+                ],
+                [
+                    'id' => $second,
+                    'stockId' => '103',
+                    'description' => $before[1]['description'],
+                    'quantity' => 2.0,
+                    'discountPercent' => 0.0,
+                ],
+            ],
+        ]);
+
+        $factor = get_sales_type(2)['factor'];
+        $date = sql2date($this->today());
+        $lines = $this->lineRows($orderNo);
+        $this->assertSame([$first, $second], $this->lineIds($orderNo), 'the line ids are unchanged');
+        $this->assertEqualsWithDelta(
+            (float) get_kit_price('101', 'USD', 2, $factor, $date),
+            (float) $lines[0]['unit_price'],
+            0.001
+        );
+        $this->assertEqualsWithDelta(
+            (float) get_kit_price('103', 'USD', 2, $factor, $date),
+            (float) $lines[1]['unit_price'],
+            0.001
+        );
+        $this->assertNotEquals((float) $before[0]['unit_price'], (float) $lines[0]['unit_price']);
+    }
+
     public function testADeliveredLineCannotBeRemoved(): void
     {
         $orderNo = $this->createOrder(['lines' => [
