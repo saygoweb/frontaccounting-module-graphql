@@ -5,6 +5,7 @@ namespace FA\GraphQL\Type\Price;
 use Anorm\GraphQL\Builder\FieldBuilder;
 use FA\GraphQL\Type\Price\Base\PriceTypeBase;
 use DI\Container;
+use FA\GraphQL\Error\NotFound;
 use FA\GraphQL\Fa\Service\PriceService;
 use FA\GraphQL\Fa\Service\ServiceCall;
 use GraphQL\Type\Definition\Type;
@@ -74,8 +75,13 @@ class PriceType extends PriceTypeBase
         $rows = [];
         ServiceCall::each($args['input'], function (array $input) use ($prices, $context, &$rows): void {
             $id = $prices->find($input);
-            $rows[] = $this->rowsById($context, [$id], self::VERB_DELETE)[0];
-            $prices->remove($input);
+            try {
+                $rows[] = $this->rowsById($context, [$id], self::VERB_DELETE)[0];
+            } catch (NotFound $e) {
+                // The read-back's index is its own 0, not the batch's: let each() name the item.
+                throw new NotFound($e->getMessage());
+            }
+            $prices->removeById($id);
         });
 
         return $rows;

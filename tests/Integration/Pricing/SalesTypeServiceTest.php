@@ -168,6 +168,18 @@ class SalesTypeServiceTest extends FaTestCase
         $this->assertEquals(0.5, $row['factor']);
     }
 
+    public function testARenameKeepsAFactorBeyondSixDecimals(): void
+    {
+        $id = $this->create(['name' => "{$this->prefix} F"]);
+        $this->pdo()->exec("UPDATE 0_sales_types SET factor = 0.33333333 WHERE id = $id");
+
+        $this->update(['id' => $id, 'name' => "{$this->prefix} F2"]);
+
+        $row = $this->row($id);
+        $this->assertSame("{$this->prefix} F2", $row['sales_type']);
+        $this->assertEquals('0.33333333', $row['factor']);
+    }
+
     public function testAnUpdateReactivatesAList(): void
     {
         $id = $this->create(['name' => "{$this->prefix} I", 'inactive' => true]);
@@ -254,5 +266,19 @@ class SalesTypeServiceTest extends FaTestCase
             (int) $this->pdo()->query("SELECT COUNT(*) FROM 0_sales_types WHERE sales_type LIKE '{$this->prefix}%'")
                 ->fetchColumn()
         );
+    }
+
+    public function testAUserWithoutSalesTypesAccessCannotUpdate(): void
+    {
+        $id = $this->create(['name' => "{$this->prefix} Keep"]);
+        $this->enterAs('apiorders');
+
+        $result = $this->gql(
+            'mutation ($input: [SalesTypeUpdateInput!]!) { salesTypeUpdate(input: $input) { id } }',
+            ['input' => [['id' => $id, 'name' => "{$this->prefix} Denied"]]]
+        );
+
+        $this->assertSame('FORBIDDEN', $result['errors'][0]['extensions']['code'], (string) json_encode($result));
+        $this->assertSame("{$this->prefix} Keep", $this->row($id)['sales_type']);
     }
 }

@@ -37,7 +37,7 @@ class SalesTypeType extends SalesTypeTypeBase
                     . 'other lists fall back to its prices times their factor.'
                 )
                 ->setResolver(function (array $row): bool {
-                    return (int) $row['id'] === (int) get_company_pref('base_sales');
+                    return (int) $row['id'] === (int) get_base_sales_type();
                 })
                 ->build(),
         ]);

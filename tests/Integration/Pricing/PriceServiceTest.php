@@ -82,7 +82,10 @@ class PriceServiceTest extends SalesOrderTestCase
     private function remove(array $input): int
     {
         return ServiceCall::run(function () use ($input): int {
-            return $this->prices()->remove($input);
+            $id = $this->prices()->find($input);
+            $this->prices()->removeById($id);
+
+            return $id;
         });
     }
 
@@ -214,6 +217,57 @@ class PriceServiceTest extends SalesOrderTestCase
         $this->assertSame('NOT_FOUND', $result['errors'][0]['extensions']['code'] ?? null, json_encode($result));
         $this->assertSame(1, $result['errors'][0]['extensions']['index'] ?? null, json_encode($result));
         $this->assertCount(1, $this->rows($this->code));
+    }
+
+    public function testALastItemMissingFromADeleteBatchNamesItsIndex(): void
+    {
+        $this->set($this->key($this->code, '1') + ['price' => 5]);
+        $this->set($this->key($this->code, '2') + ['price' => 6]);
+
+        $result = $this->graphql(
+            'mutation ($input: [PriceKeyInput!]!) { priceDelete(input: $input) { id } }',
+            ['input' => [
+                $this->key($this->code, '1'),
+                $this->key($this->code, '2'),
+                $this->key($this->code, '2', 'EUR'),
+            ]]
+        );
+
+        $this->assertSame('NOT_FOUND', $result['errors'][0]['extensions']['code'] ?? null, json_encode($result));
+        $this->assertSame(2, $result['errors'][0]['extensions']['index'] ?? null, json_encode($result));
+        $this->assertCount(2, $this->rows($this->code));
+    }
+
+    public function testPricesFilterBySalesTypeId(): void
+    {
+        $this->set($this->key($this->code, '1') + ['price' => 5]);
+        $this->set($this->key($this->code, '2') + ['price' => 6]);
+
+        $list = $this->graphql(
+            'query ($q: MangoInput) { priceList(query: $q) { salesTypeId price } priceCount(query: $q) }',
+            ['q' => ['selector' => json_encode(['stockId' => $this->code, 'salesTypeId' => 2])]]
+        );
+
+        $this->assertArrayNotHasKey('errors', $list, json_encode($list));
+        $this->assertSame([['salesTypeId' => '2', 'price' => 6.0]], $list['data']['priceList']);
+        $this->assertSame(1, $list['data']['priceCount']);
+    }
+
+    public function testDeletingWithoutSalesPriceAccessIsForbidden(): void
+    {
+        $id = $this->set($this->key($this->code) + ['price' => 1]);
+        global $security_areas;
+        $user = $_SESSION['wa_current_user'];
+        $user->role_set = array_values(array_diff($user->role_set, [$security_areas['SA_SALESPRICE'][0]]));
+        $this->assertFalse($user->can_access('SA_SALESPRICE'));
+
+        $result = $this->graphql(
+            'mutation ($input: [PriceKeyInput!]!) { priceDelete(input: $input) { id } }',
+            ['input' => [$this->key($this->code)]]
+        );
+
+        $this->assertSame('FORBIDDEN', $result['errors'][0]['extensions']['code'] ?? null, json_encode($result));
+        $this->assertSame([$id], array_map('intval', array_column($this->rows($this->code), 'id')));
     }
 
     public function testSetAndDeleteThroughTheSchemaAndReadThemBack(): void

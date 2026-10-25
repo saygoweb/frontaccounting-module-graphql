@@ -28,6 +28,9 @@ class StockItemServiceTest extends SalesOrderTestCase
     /** A temporary fixed-asset category, when a test made one. */
     private ?int $faCategory = null;
 
+    /** A temporary item tax type, when a test made one. */
+    private ?int $taxType = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -41,6 +44,10 @@ class StockItemServiceTest extends SalesOrderTestCase
         if ($this->faCategory !== null) {
             $pdo->prepare('DELETE FROM 0_stock_category WHERE category_id = ?')->execute([$this->faCategory]);
             $this->faCategory = null;
+        }
+        if ($this->taxType !== null) {
+            $pdo->prepare('DELETE FROM 0_item_tax_types WHERE id = ?')->execute([$this->taxType]);
+            $this->taxType = null;
         }
         parent::tearDown();
     }
@@ -169,10 +176,15 @@ class StockItemServiceTest extends SalesOrderTestCase
 
     public function testTheOverridesWinOverTheCategory(): void
     {
-        $code = $this->create($this->input('NZ', ['taxTypeId' => 1, 'units' => 'each', 'editable' => false]));
+        $pdo = FaTestRows::connect();
+        $pdo->exec("INSERT INTO 0_item_tax_types (name, exempt) VALUES ('{$this->p} tax', 0)");
+        $this->taxType = (int) $pdo->lastInsertId();
+        $code = $this->create(
+            $this->input('NZ', ['taxTypeId' => $this->taxType, 'units' => 'each', 'editable' => false])
+        );
 
         $row = $this->master($code);
-        $this->assertSame('1', $row['tax_type_id']);
+        $this->assertSame((string) $this->taxType, $row['tax_type_id']);
         $this->assertSame('each', $row['units']);
         $this->assertSame('0', $row['editable']);
     }
@@ -353,6 +365,42 @@ class StockItemServiceTest extends SalesOrderTestCase
         $this->assertBadInput('description', 'The item name must be entered.', function () use ($code): void {
             $this->update(['id' => $code, 'description' => '']);
         });
+    }
+
+    public function testTheCodeLimitCountsCharactersNotBytes(): void
+    {
+        // The session charset decides what a character is; make it, and the connection, UTF-8.
+        $_SESSION['language']->encoding = 'utf-8';
+        db_query('SET NAMES utf8mb4', 'could not set the connection charset');
+        $max = str_repeat('Ä', 11);
+        try {
+            $this->assertSame($max, $this->create($this->input('NZ', ['stockId' => $max])));
+        } finally {
+            $pdo = FaTestRows::connect();
+            $pdo->prepare('DELETE FROM 0_item_codes WHERE stock_id = ?')->execute([$max]);
+            $pdo->prepare('DELETE FROM 0_stock_master WHERE stock_id = ?')->execute([$max]);
+        }
+
+        $this->assertBadInput(
+            'stockId',
+            'The item code cannot be longer than 20 characters.',
+            function (): void {
+                $this->create($this->input('NZ', ['stockId' => str_repeat('Ä', 21)]));
+            }
+        );
+    }
+
+    public function testAnItemWhoseStoredUnitIsGoneCanStillBeEdited(): void
+    {
+        $code = $this->create($this->input());
+        FaTestRows::connect()->prepare('UPDATE 0_stock_master SET units = ? WHERE stock_id = ?')
+            ->execute(['gone', $code]);
+
+        $this->update(['id' => $code, 'description' => 'Renamed']);
+
+        $row = $this->master($code);
+        $this->assertSame('Renamed', $row['description']);
+        $this->assertSame('gone', $row['units']);
     }
 
     public function testUpdatingAnUnknownIdOrAKitIsNotFound(): void

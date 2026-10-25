@@ -3,10 +3,8 @@
 namespace FA\GraphQL\Type\StockItem;
 
 use DI\Container;
-use FA\GraphQL\Error\NotFound;
 use FA\GraphQL\Fa\Service\ServiceCall;
 use FA\GraphQL\Fa\Service\StockItemService;
-use FA\GraphQL\Fa\Service\StockItems;
 use FA\GraphQL\Type\StockItem\Base\StockItemTypeBase;
 
 /**
@@ -49,14 +47,9 @@ class StockItemType extends StockItemTypeBase
         $items = $context->get(StockItemService::class);
         $codes = ServiceCall::each($args['input'], function (array $input) use ($items): string {
             $input['id'] = (string) ($input['id'] ?? '');
-            $items->update($input);
-            // Read back by stock_master's spelling: the given id matched by collation.
-            $code = StockItems::canonicalId($input['id']);
-            if ($code === null) {
-                throw new NotFound("Stock item id '{$input['id']}' not found");
-            }
 
-            return $code;
+            // stock_master's spelling: the given id matched by collation.
+            return $items->update($input);
         });
 
         return $this->rowsById($context, $codes, self::VERB_EDIT);

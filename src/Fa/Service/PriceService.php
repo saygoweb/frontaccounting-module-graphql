@@ -59,15 +59,12 @@ class PriceService
     }
 
     /**
-     * @param array<string, mixed> $input stockId, salesTypeId, currency
-     * @return int the id of the price row it deleted
+     * Delete a price row by the id find() gave.
      */
-    public function remove(array $input): int
+    public function removeById(int $id): void
     {
-        $id = $this->find($input);
+        FaIncludes::items();
         delete_item_price($id);
-
-        return $id;
     }
 
     /**
@@ -88,10 +85,7 @@ class PriceService
         }
 
         $abbreviation = (string) ($input['currency'] ?? '');
-        $row = db_fetch(db_query(
-            'SELECT curr_abrev FROM ' . TB_PREF . 'currencies WHERE curr_abrev = ' . db_escape($abbreviation),
-            'could not read the currency'
-        ));
+        $row = get_currency($abbreviation);
         if (!$row) {
             throw new BadInput("There is no currency '$abbreviation'.", 'currency');
         }

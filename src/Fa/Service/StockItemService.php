@@ -4,6 +4,7 @@ namespace FA\GraphQL\Fa\Service;
 
 use FA\GraphQL\Error\BadInput;
 use FA\GraphQL\Error\NotFound;
+use FA\GraphQL\Fa\FaText;
 
 /**
  * Items, written through FrontAccounting's own add_item() and update_item() the way
@@ -19,7 +20,7 @@ final class StockItemService
     /** The page's forbidden characters (items.php:230-232). */
     private const BAD_CHARS = [' ', "'", '+', '"', '&', "\t"];
 
-    /** stock_master.stock_id is varchar(20). */
+    /** stock_master.stock_id is varchar(20): twenty characters. */
     private const CODE_LENGTH = 20;
 
     private const REFS = [
@@ -53,7 +54,7 @@ final class StockItemService
                 );
             }
         }
-        if (strlen($code) > self::CODE_LENGTH) {
+        if (mb_strlen($code, FaText::charset()) > self::CODE_LENGTH) {
             throw new BadInput('The item code cannot be longer than 20 characters.', 'stockId');
         }
         if (db_num_rows(get_item_kit($code)) > 0) {
@@ -103,9 +104,13 @@ final class StockItemService
      * row has it. A new category re-defaults nothing: the page re-defaults only for a
      * new item.
      *
+     * Only the references the input gives are checked: an item whose stored unit has
+     * since gone can still be edited.
+     *
      * @param array<string, mixed> $input with a string 'id'
+     * @return string the stock_id stored, in stock_master's spelling
      */
-    public function update(array $input): void
+    public function update(array $input): string
     {
         FaIncludes::items();
         $id = (string) ($input['id'] ?? '');
@@ -130,9 +135,11 @@ final class StockItemService
             'editable' => array_key_exists('editable', $input) ? (bool) $input['editable'] : (bool) $row['editable'],
         ];
         self::checkDescription($item['description']);
-        $category = $this->category($item['categoryId']);
-        $item['categoryId'] = (int) $category['category_id'];
-        ReferenceCheck::requireAll($item, self::REFS);
+        if (array_key_exists('categoryId', $input)) {
+            $category = $this->category($item['categoryId']);
+            $item['categoryId'] = (int) $category['category_id'];
+        }
+        ReferenceCheck::requireAll($item, array_intersect_key(self::REFS, $input));
 
         // stock_master's own spelling of the code: get_item() matched it by collation.
         $code = (string) $row['stock_id'];
@@ -163,6 +170,8 @@ final class StockItemService
         if (array_key_exists('inactive', $input) && $input['inactive'] !== null) {
             self::setInactive($code, (bool) $input['inactive']);
         }
+
+        return $code;
     }
 
     private static function checkDescription(string $description): void

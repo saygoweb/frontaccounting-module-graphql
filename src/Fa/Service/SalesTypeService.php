@@ -53,7 +53,9 @@ final class SalesTypeService
             'taxIncluded' => (bool) $row['tax_included'],
             'factor' => $row['factor'],
         ], $id);
-        update_sales_type($id, $list['name'], $list['taxIncluded'] ? 1 : 0, self::sqlNumber((float) $list['factor']));
+        // A given factor is formatted; the stored one goes back as the database holds it.
+        $factor = array_key_exists('factor', $input) ? self::sqlNumber((float) $list['factor']) : $row['factor'];
+        update_sales_type($id, $list['name'], $list['taxIncluded'] ? 1 : 0, $factor);
         if (array_key_exists('inactive', $input) && $input['inactive'] !== null) {
             update_record_status($id, $input['inactive'] ? 1 : 0, 'sales_types', 'id');
         }
@@ -102,7 +104,7 @@ final class SalesTypeService
         return $list;
     }
 
-    /** add_sales_type() puts the factor into its SQL unquoted: a plain number, never locale-formatted. */
+    /** A plain number, never locale-formatted: add/update_sales_type() db_escape() it, so it is quoted. */
     private static function sqlNumber(float $value): string
     {
         return sprintf('%.6F', $value);
