@@ -66,3 +66,7 @@ parameters:
         - ../../sales/includes/db/payment_db.inc
         - ../../gl/includes/db/gl_db_bank_accounts.inc
         - ../../gl/includes/db/gl_db_accounts.inc
+        # StockItemService: add_item, update_item, get_item (items_db.inc),
+        # get_item_category (items_category_db.inc).
+        - ../../inventory/includes/db/items_db.inc
+        - ../../inventory/includes/db/items_category_db.inc
