@@ -23,6 +23,12 @@ final class StockItemService
     /** stock_master.stock_id is varchar(20): twenty characters. */
     private const CODE_LENGTH = 20;
 
+    /** stock_master.description is varchar(200). */
+    private const DESCRIPTION_LENGTH = 200;
+
+    /** stock_master.long_description is tinytext. */
+    private const LONG_DESCRIPTION_BYTES = 255;
+
     private const REFS = [
         'categoryId' => ['stock_category', 'category_id', 'item category', true],
         'taxTypeId' => ['item_tax_types', 'id', 'tax type', true],
@@ -43,6 +49,7 @@ final class StockItemService
         $description = (string) ($input['description'] ?? '');
         // items.php:218-244, in its order and with its messages.
         self::checkDescription($description);
+        self::checkLongDescription((string) ($input['longDescription'] ?? ''));
         if (strlen($code) === 0) {
             throw new BadInput('The item code cannot be empty', 'stockId');
         }
@@ -116,7 +123,8 @@ final class StockItemService
         $id = (string) ($input['id'] ?? '');
         // get_item() has no row for a kit or a foreign code: no stock_master row.
         $row = get_item($id);
-        if (!$row) {
+        // FA reserves fixed assets for SA_ASSET (items.php:24): not served as items here.
+        if (!$row || $row['mb_flag'] === 'F') {
             throw new NotFound("Stock item id '$id' not found");
         }
         foreach (self::NOT_NULL as $field) {
@@ -135,6 +143,7 @@ final class StockItemService
             'editable' => array_key_exists('editable', $input) ? (bool) $input['editable'] : (bool) $row['editable'],
         ];
         self::checkDescription($item['description']);
+        self::checkLongDescription($item['longDescription']);
         if (array_key_exists('categoryId', $input)) {
             $category = $this->category($item['categoryId']);
             $item['categoryId'] = (int) $category['category_id'];
@@ -178,6 +187,18 @@ final class StockItemService
     {
         if (strlen($description) === 0) {
             throw new BadInput('The item name must be entered.', 'description');
+        }
+        // stock_master.description is varchar(200): characters.
+        if (mb_strlen($description, FaText::charset()) > self::DESCRIPTION_LENGTH) {
+            throw new BadInput('The item name cannot be longer than 200 characters.', 'description');
+        }
+    }
+
+    /** stock_master.long_description is tinytext: 255 bytes. */
+    private static function checkLongDescription(string $text): void
+    {
+        if (strlen($text) > self::LONG_DESCRIPTION_BYTES) {
+            throw new BadInput('The description cannot be longer than 255 bytes.', 'longDescription');
         }
     }
 

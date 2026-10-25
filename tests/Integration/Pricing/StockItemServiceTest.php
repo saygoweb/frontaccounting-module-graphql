@@ -376,9 +376,9 @@ class StockItemServiceTest extends SalesOrderTestCase
         try {
             $this->assertSame($max, $this->create($this->input('NZ', ['stockId' => $max])));
         } finally {
-            $pdo = FaTestRows::connect();
-            $pdo->prepare('DELETE FROM 0_item_codes WHERE stock_id = ?')->execute([$max]);
-            $pdo->prepare('DELETE FROM 0_stock_master WHERE stock_id = ?')->execute([$max]);
+            // On FA's own connection, which has the same SET NAMES as the write.
+            db_query('DELETE FROM 0_item_codes WHERE stock_id = ' . db_escape($max), 'could not clean up');
+            db_query('DELETE FROM 0_stock_master WHERE stock_id = ' . db_escape($max), 'could not clean up');
         }
 
         $this->assertBadInput(
@@ -388,6 +388,45 @@ class StockItemServiceTest extends SalesOrderTestCase
                 $this->create($this->input('NZ', ['stockId' => str_repeat('Ä', 21)]));
             }
         );
+    }
+
+    public function testAFixedAssetRowIsNotFoundOnUpdate(): void
+    {
+        $code = $this->create($this->input());
+        FaTestRows::connect()->prepare("UPDATE 0_stock_master SET mb_flag = 'F' WHERE stock_id = ?")
+            ->execute([$code]);
+
+        try {
+            $this->update(['id' => $code, 'description' => 'Renamed']);
+            $this->fail('expected NotFound');
+        } catch (NotFound $e) {
+            $this->assertSame("Stock item id '$code' not found", $e->getMessage());
+        }
+        $this->assertSame('Domain .nz', $this->master($code)['description']);
+    }
+
+    public function testADescriptionOver200CharactersIsRefused(): void
+    {
+        $message = 'The item name cannot be longer than 200 characters.';
+        $this->assertBadInput('description', $message, function (): void {
+            $this->create($this->input('NZ', ['description' => str_repeat('a', 201)]));
+        });
+        $code = $this->create($this->input('NZ', ['description' => str_repeat('a', 200)]));
+        $this->assertBadInput('description', $message, function () use ($code): void {
+            $this->update(['id' => $code, 'description' => str_repeat('a', 201)]);
+        });
+    }
+
+    public function testALongDescriptionOver255BytesIsRefused(): void
+    {
+        $message = 'The description cannot be longer than 255 bytes.';
+        $this->assertBadInput('longDescription', $message, function (): void {
+            $this->create($this->input('NZ', ['longDescription' => str_repeat('a', 256)]));
+        });
+        $code = $this->create($this->input('NZ', ['longDescription' => str_repeat('a', 255)]));
+        $this->assertBadInput('longDescription', $message, function () use ($code): void {
+            $this->update(['id' => $code, 'longDescription' => str_repeat('a', 256)]);
+        });
     }
 
     public function testAnItemWhoseStoredUnitIsGoneCanStillBeEdited(): void

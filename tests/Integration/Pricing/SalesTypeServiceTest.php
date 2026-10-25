@@ -135,6 +135,19 @@ class SalesTypeServiceTest extends FaTestCase
         $this->assertSame('1', (string) $row['inactive']);
     }
 
+    public function testANameOver50CharactersIsRefused(): void
+    {
+        $message = 'The sales type description cannot be longer than 50 characters.';
+        $long = $this->prefix . str_repeat('x', 50 - strlen($this->prefix) + 1);
+        $this->assertBadInput('name', $message, function () use ($long): void {
+            $this->create(['name' => $long]);
+        });
+        $id = $this->create(['name' => substr($long, 0, 50)]);
+        $this->assertBadInput('name', $message, function () use ($id, $long): void {
+            $this->update(['id' => $id, 'name' => $long]);
+        });
+    }
+
     public function testAnEmptyNameIsRefused(): void
     {
         $this->assertBadInput('name', 'The sales type description cannot be empty.', function () {

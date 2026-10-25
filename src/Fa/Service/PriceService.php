@@ -23,11 +23,13 @@ class PriceService
     public function set(array $input): int
     {
         FaIncludes::items();
-        [$stock, $list, $currency] = $this->key($input);
+        [$stock, $list, $currency] = $this->key($input, false);
         $price = $input['price'] ?? null;
         if (!is_numeric($price) || (float) $price < 0) {
             throw new BadInput('The price entered must be numeric.', 'price');
         }
+        // A plain number, never locale-formatted or in exponent form.
+        $price = sprintf('%.6F', (float) $price);
 
         $row = get_stock_price_type_currency($stock, $list, $currency);
         if ($row) {
@@ -49,7 +51,7 @@ class PriceService
     public function find(array $input): int
     {
         FaIncludes::items();
-        [$stock, $list, $currency] = $this->key($input);
+        [$stock, $list, $currency] = $this->key($input, true);
         $row = get_stock_price_type_currency($stock, $list, $currency);
         if (!$row) {
             throw new NotFound("There is no price for '$stock' on list $list in $currency.");
@@ -69,12 +71,22 @@ class PriceService
 
     /**
      * @param array<string, mixed> $input
+     * @param bool $allowKit true to resolve a kit's code too (to find and delete the
+     *                       price rows FA's page sets for kits); set() refuses kits
      * @return array{0: string, 1: int, 2: string} stock_id, list id, currency, as stored
      */
-    private function key(array $input): array
+    private function key(array $input, bool $allowKit): array
     {
         $code = (string) ($input['stockId'] ?? '');
         $stock = StockItems::canonicalId($code);
+        if ($stock === null && $allowKit) {
+            $kit = db_fetch(db_query(
+                'SELECT item_code FROM ' . TB_PREF . 'item_codes WHERE is_foreign = 0 AND item_code <> stock_id'
+                . ' AND item_code = ' . db_escape($code) . ' LIMIT 1',
+                'could not read the kit'
+            ));
+            $stock = $kit ? (string) $kit['item_code'] : null;
+        }
         if ($stock === null) {
             throw new BadInput("There is no item '$code'.", 'stockId');
         }

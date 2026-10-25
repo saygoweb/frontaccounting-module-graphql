@@ -85,6 +85,10 @@ final class SalesTypeService
         if (strlen((string) $list['name']) === 0) {
             throw new BadInput('The sales type description cannot be empty.', 'name');
         }
+        // sales_types.sales_type is char(50): characters.
+        if (mb_strlen((string) $list['name'], FaText::charset()) > 50) {
+            throw new BadInput('The sales type description cannot be longer than 50 characters.', 'name');
+        }
         if (!is_numeric($list['factor']) || (float) $list['factor'] < 0) {
             throw new BadInput('Calculation factor must be valid positive number.', 'factor');
         }

@@ -56,8 +56,15 @@ class LookupsTest extends TestCase
         $names = array_column($response['body']['data']['__schema']['mutationType']['fields'], 'name');
 
         $lookup = '/^(paymentTerms|taxGroup|salesArea|salesman|location|shipper|creditStatus|currency'
-            . '|stockItem|salesType|salesOrderLine)(Create|Update|Delete|Upsert)$/';
+            . '|salesOrderLine)(Create|Update|Delete|Upsert)$/';
         $this->assertSame([], array_values(preg_grep($lookup, $names)));
+        // Items and price lists are written (Items and prices spec 4.1, 4.2): Create and Update only.
+        foreach (['stockItem', 'salesType'] as $entity) {
+            $this->assertSame(
+                [$entity . 'Create', $entity . 'Update'],
+                array_values(preg_grep('/^' . $entity . '(Create|Update|Delete|Upsert)$/', $names))
+            );
+        }
         foreach (['customer', 'branch', 'contact', 'salesOrder'] as $entity) {
             foreach (['Create', 'Update', 'Delete'] as $verb) {
                 $this->assertContains($entity . $verb, $names);

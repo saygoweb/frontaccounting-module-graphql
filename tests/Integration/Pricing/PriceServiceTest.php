@@ -58,6 +58,7 @@ class PriceServiceTest extends SalesOrderTestCase
         $pdo = FaTestRows::connect();
         FaTestRows::sweepItems($pdo, self::PREFIX);
         $pdo->exec("DELETE FROM 0_prices WHERE stock_id = '102' AND sales_type_id = 2");
+        $pdo->exec("DELETE FROM 0_prices WHERE stock_id = '501'");
         parent::tearDown();
     }
 
@@ -136,6 +137,35 @@ class PriceServiceTest extends SalesOrderTestCase
         $this->assertCount(1, $rows);
         $this->assertSame($id, $again);
         $this->assertEquals(15, $rows[0]['price']);
+    }
+
+    public function testTheCurrencyIsMatchedByCase(): void
+    {
+        $id = $this->set(['currency' => 'usd'] + $this->key($this->code, '1') + ['price' => 10]);
+        $rows = $this->rows($this->code);
+        $this->assertSame('USD', $rows[0]['curr_abrev']);
+
+        $this->assertSame($id, $this->set(['currency' => 'usd'] + $this->key($this->code, '1') + ['price' => 11]));
+        $rows = $this->rows($this->code);
+        $this->assertCount(1, $rows);
+        $this->assertEquals(11, $rows[0]['price']);
+    }
+
+    public function testAKitPriceRowCanBeDeletedButNotSet(): void
+    {
+        $this->pdo()->exec(
+            "INSERT INTO 0_prices (stock_id, sales_type_id, curr_abrev, price) VALUES ('501', 1, 'USD', 77)"
+        );
+        $id = (int) $this->pdo()->lastInsertId();
+
+        $this->assertSame($id, $this->remove($this->key('501', '1')));
+        $this->assertSame([], $this->rows('501'));
+        try {
+            $this->set($this->key('501', '1') + ['price' => 5]);
+            $this->fail('expected BadInput');
+        } catch (BadInput $e) {
+            $this->assertSame('stockId', $e->field());
+        }
     }
 
     public function testTheKeyIsMatchedByCaseAndPadding(): void
