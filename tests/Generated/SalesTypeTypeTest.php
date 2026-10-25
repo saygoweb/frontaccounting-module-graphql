@@ -2,6 +2,7 @@
 
 namespace FA\GraphQL\Tests\Generated;
 
+use FA\GraphQL\Tests\Support\FaTestRows;
 use FA\GraphQL\Type\SalesType\SalesTypeCreateInput;
 use FA\GraphQL\Type\SalesType\SalesTypeType;
 use FA\GraphQL\Type\SalesType\SalesTypeUpdateInput;
@@ -40,11 +41,47 @@ class SalesTypeTypeTest extends TestCase
         return false;
     }
 
+    private ?string $prefix = null;
+
+    protected function testRowPrefix(): ?string
+    {
+        return $this->prefix ?? ($this->prefix = FaTestRows::prefix());
+    }
+
+    protected function tearDown(): void
+    {
+        $prefix = $this->prefix;
+        parent::tearDown();
+        if ($prefix !== null) {
+            FaTestRows::sweepItems(FaTestRows::connect(), $prefix);
+        }
+    }
+
     public function testLifecycle(): void
     {
-        // Until SalesTypeService (Release B, Task 2) the writes answer FORBIDDEN; its
-        // own test takes over the lifecycle.
-        $this->markTestSkipped('SalesTypeServiceTest covers the lifecycle.');
+        // Not the inherited lifecycle: it creates sampleInput() twice and a price
+        // list name is unique. Lists are written by FrontAccounting and swept by prefix.
+        $prefix = $this->testRowPrefix();
+        $before = count($this->listAll());
+
+        $created = $this->create([
+            $this->sampleInput(),
+            array_merge($this->sampleInput(), ['name' => $prefix . ' b']),
+        ]);
+        $this->assertCount(2, $created);
+        foreach ($this->sampleInput() as $name => $value) {
+            $this->assertEquals($value, $created[0][$name], "created $name");
+        }
+        $this->assertCount($before + 2, $this->listAll());
+
+        $id = $created[0]['id'];
+        $this->assertCount(1, $this->listWhere(['id' => (int) $id]));
+
+        $updated = $this->update([['id' => $id] + $this->sampleUpdate()]);
+        $this->assertCount(1, $updated);
+        $this->assertSame($prefix . ' renamed', $updated[0]['name']);
+        $this->assertEquals(1.5, $updated[0]['factor'], 'an update keeps what it does not name');
+        $this->assertCount($before + 2, $this->listAll());
     }
 
     protected function entityName(): string
@@ -71,7 +108,7 @@ class SalesTypeTypeTest extends TestCase
     protected function sampleInput(): array
     {
         return [
-            'name' => 'name 1',
+            'name' => $this->testRowPrefix() . ' a',
             'taxIncluded' => true,
             'factor' => 1.5,
             'inactive' => true,
@@ -81,7 +118,7 @@ class SalesTypeTypeTest extends TestCase
     protected function sampleUpdate(): array
     {
         return [
-            'name' => 'name 2',
+            'name' => $this->testRowPrefix() . ' renamed',
         ];
     }
 

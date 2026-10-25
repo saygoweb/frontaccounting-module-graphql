@@ -3,6 +3,9 @@
 namespace FA\GraphQL\Type\SalesType;
 
 use Anorm\GraphQL\Builder\FieldBuilder;
+use DI\Container;
+use FA\GraphQL\Fa\Service\SalesTypeService;
+use FA\GraphQL\Fa\Service\ServiceCall;
 use FA\GraphQL\Type\SalesType\Base\SalesTypeTypeBase;
 use GraphQL\Type\Definition\Type;
 
@@ -17,6 +20,11 @@ use GraphQL\Type\Definition\Type;
  *  - fields()   add computed fields: array_merge(parent::fields(), [...])
  *
  * authorize() is FaModelType's: it checks areas() through Guard.
+ *
+ * Price lists are written through FrontAccounting (spec §2): the generated create and
+ * update are routed to SalesTypeService, each batch in one ServiceCall::each — one
+ * FrontAccounting transaction — and the rows read back once it has committed.
+ * FaModelType refuses any write this class does not route.
  */
 class SalesTypeType extends SalesTypeTypeBase
 {
@@ -33,6 +41,31 @@ class SalesTypeType extends SalesTypeTypeBase
                 })
                 ->build(),
         ]);
+    }
+
+    public function resolveCreate($root, $args, Container $context): array
+    {
+        $this->authorize(self::VERB_CREATE, null, $context);
+        $lists = $context->get(SalesTypeService::class);
+        $ids = ServiceCall::each($args['input'], function (array $input) use ($lists): int {
+            return $lists->create($input);
+        });
+
+        return $this->rowsById($context, $ids, self::VERB_CREATE);
+    }
+
+    public function resolveUpdate($root, $args, Container $context): array
+    {
+        $this->authorize(self::VERB_EDIT, null, $context);
+        $lists = $context->get(SalesTypeService::class);
+        $ids = ServiceCall::each($args['input'], function (array $input) use ($lists): int {
+            $input['id'] = self::intId($input['id'] ?? null);
+            $lists->update($input);
+
+            return $input['id'];
+        });
+
+        return $this->rowsById($context, $ids, self::VERB_EDIT);
     }
 
     /**
