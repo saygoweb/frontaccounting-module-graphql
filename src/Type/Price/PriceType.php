@@ -4,6 +4,9 @@ namespace FA\GraphQL\Type\Price;
 
 use Anorm\GraphQL\Builder\FieldBuilder;
 use FA\GraphQL\Type\Price\Base\PriceTypeBase;
+use DI\Container;
+use FA\GraphQL\Fa\Service\PriceService;
+use FA\GraphQL\Fa\Service\ServiceCall;
 use GraphQL\Type\Definition\Type;
 
 /**
@@ -39,5 +42,42 @@ class PriceType extends PriceTypeBase
             'edit' => 'SA_SALESPRICE',
             'delete' => 'SA_SALESPRICE',
         ];
+    }
+
+    /**
+     * @param mixed $root
+     * @param array<string, mixed> $args
+     * @return array<int, array<string, mixed>>
+     */
+    public function resolveSet($root, $args, Container $context): array
+    {
+        $this->authorize(self::VERB_CREATE, null, $context);
+        $prices = $context->get(PriceService::class);
+        $ids = ServiceCall::each($args['input'], function (array $input) use ($prices): int {
+            return $prices->set($input);
+        });
+
+        return $this->rowsById($context, $ids, self::VERB_EDIT);
+    }
+
+    /**
+     * Each row is read before it is deleted, inside the batch's transaction.
+     *
+     * @param mixed $root
+     * @param array<string, mixed> $args
+     * @return array<int, array<string, mixed>>
+     */
+    public function resolveRemove($root, $args, Container $context): array
+    {
+        $this->authorize(self::VERB_DELETE, null, $context);
+        $prices = $context->get(PriceService::class);
+        $rows = [];
+        ServiceCall::each($args['input'], function (array $input) use ($prices, $context, &$rows): void {
+            $id = $prices->find($input);
+            $rows[] = $this->rowsById($context, [$id], self::VERB_DELETE)[0];
+            $prices->remove($input);
+        });
+
+        return $rows;
     }
 }

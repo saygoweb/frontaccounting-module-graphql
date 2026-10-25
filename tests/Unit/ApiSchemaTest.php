@@ -36,6 +36,8 @@ class ApiSchemaTest extends TestCase
             $sdl
         );
         $this->assertStringContainsString('salesTypeId: ID!', $sdl);
+        $this->assertStringContainsString('priceSet(input: [PriceSetInput!]!): [PriceType!]!', $sdl);
+        $this->assertStringContainsString('priceDelete(input: [PriceKeyInput!]!): [PriceType!]!', $sdl);
         $this->assertStringContainsString('me: Viewer!', $sdl);
         $this->assertStringContainsString(
             'login(company: Int = 0, user: String!, password: String!): AuthPayload!',
@@ -87,7 +89,8 @@ class ApiSchemaTest extends TestCase
                 'branchCreate', 'branchDelete', 'branchUpdate', 'contactCreate', 'contactDelete', 'contactUpdate',
                 'customerCreate', 'customerDelete', 'customerPaymentCreate', 'customerPaymentDelete',
                 'customerPaymentUpdate', 'customerUpdate', 'deliveryCreate', 'deliveryDelete',
-                'invoiceCreate', 'invoiceDelete', 'invoiceEmail', 'login', 'salesOrderCreate', 'salesOrderDelete',
+                'invoiceCreate', 'invoiceDelete', 'invoiceEmail', 'login', 'priceDelete', 'priceSet',
+                'salesOrderCreate', 'salesOrderDelete',
                 'salesOrderUpdate', 'salesTypeCreate', 'salesTypeUpdate', 'stockItemCreate', 'stockItemUpdate',
                 'tokenRefresh', 'tokenRevoke',
             ],

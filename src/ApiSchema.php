@@ -39,6 +39,8 @@ use FA\GraphQL\Type\Invoice\InvoiceType;
 use FA\GraphQL\Type\Location\LocationType;
 use FA\GraphQL\Type\PaymentTerms\PaymentTermsType;
 use FA\GraphQL\Type\Price\PriceQuoteType;
+use FA\GraphQL\Type\Price\PriceKeyInput;
+use FA\GraphQL\Type\Price\PriceSetInput;
 use FA\GraphQL\Type\Price\PriceType;
 use FA\GraphQL\Type\SalesArea\SalesAreaType;
 use FA\GraphQL\Type\SalesOrderLine\SalesOrderLineType;
@@ -394,6 +396,30 @@ class ApiSchema extends Schema
                         'resolve' => function ($root, array $args) {
                             return $this->type(AuthMutations::class)->resolveLogin($root, $args);
                         },
+                    ],
+                    'priceDelete' => [
+                        'type' => Type::nonNull(Type::listOf(Type::nonNull($this->type(PriceType::class)))),
+                        'description' => 'Remove prices by item, list and currency; returns the rows removed. '
+                            . 'Needs SA_SALESPRICE.',
+                        'args' => [
+                            'input' => [
+                                'type' => Type::nonNull(Type::listOf(Type::nonNull($this->type(PriceKeyInput::class)))),
+                            ],
+                        ],
+                        'resolve' => fn ($root, $args) => $this->type(PriceType::class)
+                            ->resolveRemove($root, $args, $this->context),
+                    ],
+                    'priceSet' => [
+                        'type' => Type::nonNull(Type::listOf(Type::nonNull($this->type(PriceType::class)))),
+                        'description' => "Add or change prices, one per item, list and currency, as FA's sales "
+                            . 'pricing page does. Needs SA_SALESPRICE.',
+                        'args' => [
+                            'input' => [
+                                'type' => Type::nonNull(Type::listOf(Type::nonNull($this->type(PriceSetInput::class)))),
+                            ],
+                        ],
+                        'resolve' => fn ($root, $args) => $this->type(PriceType::class)
+                            ->resolveSet($root, $args, $this->context),
                     ],
                     // anorm-graphql
                     GraphQLUtils::createListField(
