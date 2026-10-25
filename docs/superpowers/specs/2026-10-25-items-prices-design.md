@@ -156,25 +156,37 @@ everything is NZD (P10).
 
 ### 4.1 Items
 
-- `stockItemCreate(input: [StockItemCreateInput!]!)`: `stockId` (≤ 20 chars,
-  required), `description` (required), `categoryId` (required), `longDescription`,
-  `inactive`. Created as FA's item page creates a service item: `mb_flag` 'D',
-  `editable` 1, `units` 'each', and tax type, sales/COGS/inventory/adjustment GL
-  accounts and dimensions from the category (`get_item_category()`), through FA's
-  `add_item()`. A duplicate code is BAD_INPUT, and so is an unknown category.
+- `stockItemCreate(input: [StockItemCreateInput!]!)`: `stockId` (required),
+  `description` (required), `categoryId` (required), `longDescription`, `inactive`,
+  and three optional overrides: `taxTypeId`, `units`, `editable`. Created as FA's item
+  page creates an item (inventory/manage/items.php): tax type, units, `mb_flag`,
+  sales/COGS/inventory/adjustment/WIP accounts, dimensions, `no_sale` and
+  `no_purchase` come from the category (`get_item_category()`), through FA's
+  `add_item()`. The overrides win over the category's defaults, as the page lets them.
+  `editable` defaults to true (the page's default is false), because the Panel's lines
+  carry their own descriptions (§3.2).
+- The code is checked as the page checks it: not empty, none of space, `'`, `+`, `"`,
+  `&` or tab, and not already an item or kit code (`get_item_kit()`). It must also fit
+  `stock_master.stock_id` (20 characters). Each of these is BAD_INPUT on `stockId`. An
+  unknown category, a fixed-asset category (`dflt_mb_flag` 'F'), an unknown tax type
+  or an unknown unit is BAD_INPUT on its field; so is an empty description.
 - `stockItemUpdate(input: [StockItemUpdateInput!]!)`: `id`, `description`,
-  `longDescription`, `categoryId`, `inactive`, through `update_item()`. Changing
-  the category does not re-default the accounts (FA's page re-defaults them only on
-  a new item).
-- Access `SA_ITEM`. `stockItemList` stays as it is (`SA_SALESORDER`, sellable only).
+  `longDescription`, `categoryId`, `inactive`, `taxTypeId`, `units`, `editable`,
+  through `update_item()`, which rewrites every column: the ones not given keep the
+  row's values. Changing the category does not re-default anything (the page
+  re-defaults only on a new item). `inactive` is set on `stock_master` and
+  `item_codes`, as the page sets it. An unknown id is NOT_FOUND.
+- Access: `SA_ITEM` for both. `stockItemList` stays as it is (`SA_SALESORDER`).
   No delete: FA refuses to delete an item with transactions, and `inactive` covers
   retiring one.
 
 ### 4.2 Price lists
 
 - `salesTypeCreate` / `salesTypeUpdate`: `name`, `factor` (default 1.0),
-  `taxIncluded`, `inactive`, through `add_sales_type()` / `update_sales_type()`.
-  Access `SA_SALESTYPES`.
+  `taxIncluded`, `inactive`, through `add_sales_type()` / `update_sales_type()`, with
+  `inactive` through `update_record_status()`. An empty name, or a factor that is not
+  a number ≥ 0, is BAD_INPUT, as the page refuses them; so is a name another list
+  has (`sales_types.sales_type` is unique). Access `SA_SALESTYPES`. No delete.
 - `salesTypeList` gains `isBase: Boolean!` (the list is `base_sales`). This also
   answers "which list is the base".
 
@@ -182,13 +194,22 @@ everything is NZD (P10).
 
 - `priceList(query: MangoInput): [Price!]!` and `priceCount`, over `prices`:
   `{ id, stockId, salesTypeId, currency, price }`. Access `SA_SALESPRICE`.
-- `priceSet(input: [PriceSetInput!]!): [Price!]!`. It upserts by
+- `priceSet(input: [PriceSetInput!]!): [Price!]!`, with `PriceSetInput { stockId:
+  String!, salesTypeId: ID!, currency: String!, price: Float! }`. It upserts by
   (`stockId`, `salesTypeId`, `currency`) through `add_item_price()` /
-  `update_item_price()`. The item, list and currency must exist.
-- `priceDelete(input: [PriceKeyInput!]!): [Price!]!`. It deletes by the same key
+  `update_item_price()`. The item (a stock item, not a kit), list and currency must
+  exist, else BAD_INPUT on the field; a price below 0 is BAD_INPUT, as the page's
+  `check_num('price', 0)`. Codes are stored as `stock_master` and `currencies` spell
+  them.
+- `priceDelete(input: [PriceKeyInput!]!): [Price!]!`, with `PriceKeyInput { stockId:
+  String!, salesTypeId: ID!, currency: String! }`. It deletes by that key
   (`delete_item_price()`) and returns the rows removed. A key with no row is
   NOT_FOUND.
 - Access `SA_SALESPRICE`. Batches are atomic, as every mutation is.
+- Set explicit prices on any list whose `taxIncluded` differs from the base list's.
+  FA's fallback (base × factor, §3.1) does not convert between tax-included and
+  tax-excluded prices: with no price of its own, a tax-excluded list charges the
+  tax-included base figure times its factor, now without tax added on top.
 
 ### 4.4 Customer's list
 
@@ -211,6 +232,11 @@ call, as other batches do, and the error carries the index. At most 200 items.
 - Release A's rollout note (README and release notes): items the Panel switches
   lines to must have editable descriptions (§3.2).
   The pricing session is told the version and the PR link.
+- Release B's access: the panel's role needs `SA_ITEM` and `SA_SALESPRICE` to write
+  items and prices (`SA_SALESTYPES` only to add or edit lists). Granting them is the
+  user's call, in FA's role editor on live; the test seed grants them to its
+  "GraphQL Panel" role so the HTTP tests run as the Panel will. The live login is
+  `sgw-panel`.
 - README: the coverage table gains a "Pricing" row (A), then "Items and price
   lists" (B). The roadmap's "inventory maintenance" gap narrows.
 
@@ -234,4 +260,25 @@ list with a factor and an override):
 - `salesOrderList`: `currency` is the customer's currency.
 - HTTP: the Panel's exact query document (§3.1) through the endpoint with a
   machine token.
-- B and C get their own test sections when they are planned.
+- C gets its own test section when it is planned.
+
+Release B (integration, demo company):
+
+- `stockItemCreate`: a service item in category 4 takes the category's tax type,
+  units, accounts and `mb_flag`, with `editable` true; each override wins; each
+  BAD_INPUT of §4.1; `inactive: true` is set on `stock_master` and `item_codes`; a
+  batch with one bad item writes nothing.
+- `stockItemUpdate`: a description change keeps every other column; a category change
+  keeps the accounts; `inactive` both ways; an unknown id is NOT_FOUND.
+- `salesTypeCreate` / `salesTypeUpdate`: defaults, each BAD_INPUT, `inactive`;
+  `isBase` is true only for the `base_sales` list.
+- `priceSet`: an insert, then the same key again updates the row (one row, new price);
+  a code in another case is stored as `stock_master` spells it; each BAD_INPUT;
+  `priceQuote` returns the set price afterwards. `priceDelete`: returns the removed
+  row; a missing key is NOT_FOUND and the batch removes nothing.
+- `priceList` / `priceCount` filter by `stockId` and `salesTypeId`.
+- `customerUpdate(salesTypeId)` moves a customer to another list, and `priceQuote`
+  for that customer then uses it.
+- Access: each mutation without its area is FORBIDDEN.
+- HTTP, with the panel's machine token: the Panel's own shapes, four items created in
+  category 4, prices set on two lists, a customer moved to a list and quoted.
