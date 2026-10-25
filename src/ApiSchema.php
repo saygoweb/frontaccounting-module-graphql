@@ -39,15 +39,20 @@ use FA\GraphQL\Type\Invoice\InvoiceType;
 use FA\GraphQL\Type\Location\LocationType;
 use FA\GraphQL\Type\PaymentTerms\PaymentTermsType;
 use FA\GraphQL\Type\Price\PriceQuoteType;
+use FA\GraphQL\Type\Price\PriceType;
 use FA\GraphQL\Type\SalesArea\SalesAreaType;
 use FA\GraphQL\Type\SalesOrderLine\SalesOrderLineType;
 use FA\GraphQL\Type\SalesOrder\SalesOrderCreateInput;
 use FA\GraphQL\Type\SalesOrder\SalesOrderType;
 use FA\GraphQL\Type\SalesOrder\SalesOrderUpdateInput;
+use FA\GraphQL\Type\SalesType\SalesTypeCreateInput;
 use FA\GraphQL\Type\SalesType\SalesTypeType;
+use FA\GraphQL\Type\SalesType\SalesTypeUpdateInput;
 use FA\GraphQL\Type\Salesman\SalesmanType;
 use FA\GraphQL\Type\Shipper\ShipperType;
+use FA\GraphQL\Type\StockItem\StockItemCreateInput;
 use FA\GraphQL\Type\StockItem\StockItemType;
+use FA\GraphQL\Type\StockItem\StockItemUpdateInput;
 use FA\GraphQL\Type\TaxGroup\TaxGroupType;
 use FA\GraphQL\Type\Viewer\ViewerType;
 use GraphQL\Type\Definition\ObjectType;
@@ -175,6 +180,11 @@ class ApiSchema extends Schema
                         $this->type(PaymentTermsType::class),
                         'resolveList'
                     )
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    $this->countField('priceCount', PriceType::class),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('priceList', $this->type(PriceType::class), 'resolveList')
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
                     'priceQuote' => [
@@ -413,6 +423,34 @@ class ApiSchema extends Schema
                         ->addArgument(
                             'input',
                             Type::nonNull(Type::listOf(Type::nonNull($this->type(SalesOrderUpdateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('salesTypeCreate', $this->type(SalesTypeType::class), 'resolveCreate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(SalesTypeCreateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('salesTypeUpdate', $this->type(SalesTypeType::class), 'resolveUpdate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(SalesTypeUpdateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('stockItemCreate', $this->type(StockItemType::class), 'resolveCreate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(StockItemCreateInput::class))))
+                        )
+                        ->build(),
+                    // anorm-graphql
+                    GraphQLUtils::createListField('stockItemUpdate', $this->type(StockItemType::class), 'resolveUpdate')
+                        ->addArgument(
+                            'input',
+                            Type::nonNull(Type::listOf(Type::nonNull($this->type(StockItemUpdateInput::class))))
                         )
                         ->build(),
                     'tokenRefresh' => [

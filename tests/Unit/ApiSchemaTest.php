@@ -70,7 +70,7 @@ class ApiSchemaTest extends TestCase
         $lists = [
             'allocation', 'bankAccount', 'branch', 'contact', 'creditStatus', 'currency', 'customer',
             'customerPayment', 'deliveryLine', 'delivery', 'invoiceLine', 'invoice', 'location', 'paymentTerms',
-            'salesArea', 'salesOrderLine', 'salesOrder', 'salesType', 'salesman', 'shipper', 'stockItem',
+            'price', 'salesArea', 'salesOrderLine', 'salesOrder', 'salesType', 'salesman', 'shipper', 'stockItem',
             'taxGroup',
         ];
         $expected = ['apiVersion', 'me', 'priceQuote'];
@@ -88,7 +88,7 @@ class ApiSchemaTest extends TestCase
                 'customerCreate', 'customerDelete', 'customerPaymentCreate', 'customerPaymentDelete',
                 'customerPaymentUpdate', 'customerUpdate', 'deliveryCreate', 'deliveryDelete',
                 'invoiceCreate', 'invoiceDelete', 'invoiceEmail', 'login', 'salesOrderCreate', 'salesOrderDelete',
-                'salesOrderUpdate',
+                'salesOrderUpdate', 'salesTypeCreate', 'salesTypeUpdate', 'stockItemCreate', 'stockItemUpdate',
                 'tokenRefresh', 'tokenRevoke',
             ],
             array_keys($schema->getMutationType()->getFields())
@@ -96,7 +96,7 @@ class ApiSchemaTest extends TestCase
         $this->assertNull($schema->getSubscriptionType());
     }
 
-    public function testSalesTypesAreListedReadOnlyThroughMango(): void
+    public function testSalesTypesAreListedThroughMangoAndWrittenByCreateAndUpdate(): void
     {
         $sdl = SchemaPrinter::doPrint($this->schema());
 
@@ -107,15 +107,37 @@ class ApiSchemaTest extends TestCase
             $sdl
         );
         $typePattern = '/type SalesTypeType \{\s+id: ID!\s+name: String\s+taxIncluded: Boolean'
-            . '\s+factor: Float\s+inactive: Boolean\s+\}/';
+            . '\s+factor: Float\s+inactive: Boolean\s+"[^"]*"\s+isBase: Boolean!\s+\}/';
         $this->assertMatchesRegularExpression($typePattern, $sdl);
         $inputPattern = '/input MangoInput \{\s+action: String\s+selector: String\s+limit: Int'
             . '\s+skip: Int\s+sort: \[String\]\s+\}/';
         $this->assertMatchesRegularExpression($inputPattern, $sdl);
-        // Read-only: no Input, no mutations.
-        $this->assertStringNotContainsString('SalesTypeInput', $sdl);
-        $this->assertStringNotContainsString('salesTypeUpsert', $sdl);
+        // Written by create and update; no delete, no upsert.
+        $this->assertStringContainsString('salesTypeCreate(input: [SalesTypeCreateInput!]!)', $sdl);
+        $this->assertStringContainsString('salesTypeUpdate(', $sdl);
         $this->assertStringNotContainsString('salesTypeDelete', $sdl);
+        $this->assertStringNotContainsString('salesTypeUpsert', $sdl);
+    }
+
+    public function testStockItemInputsAreTheSpecsFields(): void
+    {
+        $schema = $this->schema();
+        $create = $schema->getType('StockItemCreateInput');
+        $update = $schema->getType('StockItemUpdateInput');
+
+        $this->assertSame(
+            ['stockId', 'description', 'categoryId', 'longDescription', 'inactive', 'taxTypeId', 'units', 'editable'],
+            array_keys($create->getFields())
+        );
+        $this->assertSame(
+            ['id', 'description', 'longDescription', 'categoryId', 'inactive', 'taxTypeId', 'units', 'editable'],
+            array_keys($update->getFields())
+        );
+        foreach (['stockId' => 'String!', 'description' => 'String!', 'categoryId' => 'ID!'] as $name => $type) {
+            $this->assertSame($type, (string) $create->getField($name)->getType(), "create $name");
+        }
+        $this->assertSame('ID!', (string) $update->getField('id')->getType());
+        $this->assertSame('String', (string) $update->getField('description')->getType());
     }
 
     /**
@@ -141,7 +163,7 @@ class ApiSchemaTest extends TestCase
             $this->assertSame('MangoInput', (string) $count->getArg('query')->getType(), $countName);
             $this->assertStringContainsString($name, (string) $count->description, $countName);
         }
-        $this->assertSame(22, $lists);
+        $this->assertSame(23, $lists);
     }
 
     /**
@@ -217,7 +239,7 @@ class ApiSchemaTest extends TestCase
                 $name . ' and its count'
             );
         }
-        $this->assertSame(22, $lists);
+        $this->assertSame(23, $lists);
     }
 
     /**

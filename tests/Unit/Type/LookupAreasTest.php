@@ -74,12 +74,22 @@ class LookupAreasTest extends TestCase
     /**
      * @dataProvider lookups
      */
-    public function testListingIsTheOnlyVerbAndItNeedsSalesOrders(string $class): void
+    public function testListingNeedsSalesOrdersAndAnyWriteTheSetupArea(string $class): void
     {
         $areas = new \ReflectionMethod($class, 'areas');
         $areas->setAccessible(true);
 
-        $this->assertSame(['list' => 'SA_SALESORDER'], $areas->invoke(new $class()));
+        // SalesType and StockItem are also written, with FA's own setup areas
+        // (Items and prices spec section 4); listing is still the order-taking area.
+        $written = [
+            SalesTypeType::class => ['create' => 'SA_SALESTYPES', 'edit' => 'SA_SALESTYPES'],
+            StockItemType::class => ['create' => 'SA_ITEM', 'edit' => 'SA_ITEM'],
+        ];
+
+        $this->assertSame(
+            ['list' => 'SA_SALESORDER'] + ($written[$class] ?? []),
+            $areas->invoke(new $class())
+        );
     }
 
     /**

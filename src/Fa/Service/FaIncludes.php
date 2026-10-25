@@ -22,6 +22,25 @@ final class FaIncludes
     }
 
     /**
+     * Items and price lists: sales_db.inc brings sales_types_db.inc, and
+     * inventory_db.inc brings the items, codes, category and prices files.
+     * items_units_db.inc has get_item_unit(), item_tax_types_db.inc get_item_tax_type().
+     */
+    public static function items(): void
+    {
+        foreach (
+            [
+            'sales/includes/sales_db.inc',
+            'inventory/includes/inventory_db.inc',
+            'inventory/includes/db/items_units_db.inc',
+            'taxes/db/item_tax_types_db.inc',
+            ] as $file
+        ) {
+            Bootstrap::includeFa($file);
+        }
+    }
+
+    /**
      * What a Cart needs beyond boot. includes/ui.inc is taken for granted by
      * FrontAccounting's sales code (count_array() in sales_db.inc, for one); other
      * extensions include it for the same reason. sales_order_ui.inc is for

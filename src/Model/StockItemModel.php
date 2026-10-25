@@ -9,9 +9,10 @@ use FA\GraphQL\Db\Connection;
 use FA\GraphQL\Fa\CompanyContext;
 
 /**
- * A stock item: FrontAccounting's stock_master, keyed by its code ('101'). Read-only
- * through the API, and only the columns an order needs: GL accounts, costs and
- * depreciation are left out.
+ * A stock item: FrontAccounting's stock_master, keyed by its code ('101'). Written
+ * only through StockItemService (StockItemType routes the generated create and
+ * update there; no delete). Only the columns an order needs: GL accounts, costs and
+ * depreciation are left out. `@required` marks what stockItemCreate must be given.
  *
  * Sellable, as FrontAccounting's order entry offers items: mbFlag is not 'F' (fixed
  * asset), and neither inactive nor noSale. A client filters with a Mango selector.
@@ -21,13 +22,19 @@ class StockItemModel extends Model
     /** @var string */
     public $id;
 
-    /** @var int */
+    /**
+     * @var int
+     * @required
+     */
     public $categoryId = 0;
 
     /** @var int */
     public $taxTypeId = 0;
 
-    /** @var string */
+    /**
+     * @var string
+     * @required
+     */
     public $description = '';
 
     /** @var string */

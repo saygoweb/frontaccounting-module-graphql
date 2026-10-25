@@ -2,7 +2,9 @@
 
 namespace FA\GraphQL\Tests\Generated;
 
+use FA\GraphQL\Type\SalesType\SalesTypeCreateInput;
 use FA\GraphQL\Type\SalesType\SalesTypeType;
+use FA\GraphQL\Type\SalesType\SalesTypeUpdateInput;
 
 /**
  * Yours to edit: anorm-graphql writes this file once and never again.
@@ -20,7 +22,29 @@ class SalesTypeTypeTest extends TestCase
 
     protected function inputClass(): ?string
     {
-        return null;
+        return SalesTypeCreateInput::class;
+    }
+
+    protected function updateInputClass(): ?string
+    {
+        return SalesTypeUpdateInput::class;
+    }
+
+    protected function requiredFields(): array
+    {
+        return ['name'];
+    }
+
+    protected function hasDeleteMutation(): bool
+    {
+        return false;
+    }
+
+    public function testLifecycle(): void
+    {
+        // Until SalesTypeService (Release B, Task 2) the writes answer FORBIDDEN; its
+        // own test takes over the lifecycle.
+        $this->markTestSkipped('SalesTypeServiceTest covers the lifecycle.');
     }
 
     protected function entityName(): string
@@ -71,5 +95,16 @@ class SalesTypeTypeTest extends TestCase
         $this->assertFalse($byName['Wholesale']['taxIncluded']);
         $this->assertSame(0.7, $byName['Wholesale']['factor']);
         $this->assertFalse($byName['Retail']['inactive']);
+    }
+
+    public function testOnlyTheCompanysBaseListIsBase(): void
+    {
+        // en_US-demo: 1 Retail is base_sales, 2 Wholesale is not.
+        $this->useDatabase();
+        $rows = $this->execute('{ salesTypeList { id isBase } }')['salesTypeList'];
+        $byId = array_column($rows, 'isBase', 'id');
+
+        $this->assertTrue($byId['1']);
+        $this->assertFalse($byId['2']);
     }
 }

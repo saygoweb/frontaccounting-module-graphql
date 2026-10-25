@@ -71,6 +71,24 @@ final class FaTestRows
     }
 
     /**
+     * Deletes items whose code starts with $prefix, price lists whose name starts
+     * with it, and the prices of both, in an order that leaves no orphan.
+     */
+    public static function sweepItems(\PDO $pdo, string $prefix, string $tb = '0_'): void
+    {
+        $like = $prefix . '%';
+        self::run($pdo, "DELETE FROM {$tb}prices WHERE stock_id LIKE ?", [$like]);
+        $lists = self::column($pdo, "SELECT id FROM {$tb}sales_types WHERE sales_type LIKE ?", [$like]);
+        if ($lists !== []) {
+            self::run($pdo, "DELETE FROM {$tb}prices WHERE sales_type_id IN (" . self::marks($lists) . ')', $lists);
+        }
+        self::run($pdo, "DELETE FROM {$tb}loc_stock WHERE stock_id LIKE ?", [$like]);
+        self::run($pdo, "DELETE FROM {$tb}item_codes WHERE stock_id LIKE ?", [$like]);
+        self::run($pdo, "DELETE FROM {$tb}stock_master WHERE stock_id LIKE ?", [$like]);
+        self::run($pdo, "DELETE FROM {$tb}sales_types WHERE sales_type LIKE ?", [$like]);
+    }
+
+    /**
      * @param array<int, mixed> $params
      * @return array<int, string>
      */
