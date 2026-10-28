@@ -60,7 +60,7 @@ Access: `SA_BANKTRANSVIEW`.
 ```graphql
 type BankTransactionType {
   id: ID!                 # bank_trans.id: the row a reconciliation ticks
-  type: Int               # FA transaction type (1 payment, 2 deposit, 4 transfer, 12 customer payment, 22 supplier payment, ...)
+  transType: Int          # FA transaction type (1 payment, 2 deposit, 4 transfer, 12 customer payment, 22 supplier payment, ...)
   transNo: ID             # the transaction's number within its type
   bankAccountId: ID       # bank_act
   reference: String       # ref
@@ -70,12 +70,12 @@ type BankTransactionType {
   personType: Int         # person_type_id (0 misc, 2 customer, 3 supplier, 4 quick entry, ...)
   personId: String        # person_id: an id, or for misc a free-text name
   voided: Boolean!        # amount 0 (FA voids a bank entry by zeroing it); computed in SQL
-  memo: String            # comments.memo_ for (type, transNo)
+  memo: String            # comments.memo_ for (transType, transNo)
   counterparty: String    # FA's payment_person_name(personType, personId, false): customer/supplier name, quick entry, misc name
 }
 ```
 
-Selector and sort fields: `id`, `type`, `transNo`, `bankAccountId`, `reference`,
+Selector and sort fields: `id`, `transType`, `transNo`, `bankAccountId`, `reference`,
 `date`, `amount`, `reconciled`, `personType`, `personId`, `voided`. `memo` and
 `counterparty` are resolved per row and are not filterable (YAGNI; Claude matches on
 them after listing).

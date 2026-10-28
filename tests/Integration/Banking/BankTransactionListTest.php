@@ -10,7 +10,7 @@ namespace FA\GraphQL\Tests\Integration\Banking;
  */
 class BankTransactionListTest extends BankingTestCase
 {
-    private const FIELDS = 'id type transNo bankAccountId reference date amount reconciled'
+    private const FIELDS = 'id transType transNo bankAccountId reference date amount reconciled'
         . ' personType personId voided memo counterparty';
 
     /**
@@ -35,7 +35,7 @@ class BankTransactionListTest extends BankingTestCase
 
         $this->assertSame([[
             'id' => (string) $id,
-            'type' => 1,
+            'transType' => 1,
             'transNo' => 990001,
             'bankAccountId' => (string) self::ACCOUNT,
             'reference' => self::REF . '1',
@@ -69,6 +69,8 @@ class BankTransactionListTest extends BankingTestCase
 
         $this->assertSame([['id' => (string) $voided]], $this->list($mine + ['voided' => true], 'id'));
         $this->assertCount(4, $this->list($mine, 'id'));
+        $this->assertCount(4, $this->list($mine + ['transType' => 1], 'id'));
+        $this->assertCount(0, $this->list($mine + ['transType' => 12], 'id'));
         $this->assertSame((string) $later, $this->list($mine + ['date' => ['$gt' => '2031-01-31']], 'id')[0]['id']);
     }
 

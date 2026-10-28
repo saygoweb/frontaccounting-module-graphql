@@ -45,7 +45,7 @@ class BankTransactionType extends BankTransactionTypeBase
                         'SELECT memo_ FROM ' . CompanyContext::prefix()
                         . 'comments WHERE type = ? AND id = ? ORDER BY date_ LIMIT 1'
                     );
-                    $statement->execute([(int) $row['type'], (int) $row['transNo']]);
+                    $statement->execute([(int) $row['transType'], (int) $row['transNo']]);
                     $memo = $statement->fetchColumn();
 
                     return $memo === false ? null : (string) $memo;

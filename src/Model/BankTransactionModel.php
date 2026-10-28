@@ -21,7 +21,7 @@ class BankTransactionModel extends Model
     public $id;
 
     /** @var int FrontAccounting's transaction type (1 payment, 2 deposit, 4 transfer, 12 customer payment, 22 supplier payment, ...) */
-    public $type = 0;
+    public $transType = 0;
 
     /** @var int The transaction's number within its type */
     public $transNo = 0;
@@ -57,7 +57,7 @@ class BankTransactionModel extends Model
             'voided' => ComputedColumns::bankTransVoided(),
         ]), [
             'id' => 'id',
-            'type' => 'type',
+            'transType' => 'type',
             'transNo' => 'trans_no',
             'bankAccountId' => 'bank_act',
             'reference' => 'ref',

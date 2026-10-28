@@ -27,7 +27,7 @@ abstract class BankTransactionTypeBase extends \FA\GraphQL\Type\FaModelType
     {
         return [
             FieldBuilder::create('id', Type::nonNull(Type::id()))->build(),
-            FieldBuilder::create('type', Type::int())->build(),
+            FieldBuilder::create('transType', Type::int())->build(),
             FieldBuilder::create('transNo', Type::int())->build(),
             FieldBuilder::create('bankAccountId', Type::id())->build(),
             FieldBuilder::create('reference', Type::string())->build(),

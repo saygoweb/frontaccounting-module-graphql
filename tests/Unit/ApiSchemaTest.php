@@ -267,8 +267,8 @@ class ApiSchemaTest extends TestCase
         $method = new \ReflectionMethod($type, 'modelClass');
         $method->setAccessible(true);
         $class = $method->invoke($type);
-        // Anorm's Mango parser reads these words as operators (bank_trans' `type`), so
-        // a selector or sort cannot name them: FaModelType::queryableFields() leaves them out.
+        // Anorm's Mango parser reads these words as operators, so a selector or sort
+        // cannot name them: FaModelType::queryableFields() leaves them out.
         $operators = (new \ReflectionClassConstant(ModelType::class, 'OPERATOR_WORDS'))->getValue();
 
         return array_values(array_filter(

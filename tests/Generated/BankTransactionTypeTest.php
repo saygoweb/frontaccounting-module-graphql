@@ -34,7 +34,7 @@ class BankTransactionTypeTest extends TestCase
     {
         return [
             'id' => 'ID!',
-            'type' => 'Int',
+            'transType' => 'Int',
             'transNo' => 'Int',
             'bankAccountId' => 'ID',
             'reference' => 'String',
@@ -52,7 +52,7 @@ class BankTransactionTypeTest extends TestCase
         // Foreign keys are left out: the generator cannot know a valid parent row.
         // If any is required, create the parent here and add: bankAccountId, personId
         return [
-            'type' => 1,
+            'transType' => 1,
             'transNo' => 1,
             'reference' => 'reference 1',
             'date' => '2026-01-01',
@@ -66,7 +66,7 @@ class BankTransactionTypeTest extends TestCase
     protected function sampleUpdate(): array
     {
         return [
-            'type' => 2,
+            'transType' => 2,
         ];
     }
 }
