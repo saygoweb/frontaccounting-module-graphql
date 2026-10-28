@@ -2,6 +2,7 @@
 
 namespace FA\GraphQL\Tests\Unit;
 
+use Anorm\GraphQL\ModelType;
 use DI\ContainerBuilder;
 use FA\GraphQL\ApiSchema;
 use FA\GraphQL\Db\UnconnectedPdo;
@@ -70,7 +71,7 @@ class ApiSchemaTest extends TestCase
         $query = array_keys($schema->getQueryType()->getFields());
         sort($query);
         $lists = [
-            'allocation', 'bankAccount', 'branch', 'contact', 'creditStatus', 'currency', 'customer',
+            'allocation', 'bankAccount', 'bankTransaction', 'branch', 'contact', 'creditStatus', 'currency', 'customer',
             'customerPayment', 'deliveryLine', 'delivery', 'invoiceLine', 'invoice', 'location', 'paymentTerms',
             'price', 'salesArea', 'salesOrderLine', 'salesOrder', 'salesType', 'salesman', 'shipper', 'stockItem',
             'taxGroup',
@@ -166,7 +167,7 @@ class ApiSchemaTest extends TestCase
             $this->assertSame('MangoInput', (string) $count->getArg('query')->getType(), $countName);
             $this->assertStringContainsString($name, (string) $count->description, $countName);
         }
-        $this->assertSame(23, $lists);
+        $this->assertSame(24, $lists);
     }
 
     /**
@@ -242,7 +243,7 @@ class ApiSchemaTest extends TestCase
                 $name . ' and its count'
             );
         }
-        $this->assertSame(23, $lists);
+        $this->assertSame(24, $lists);
     }
 
     /**
@@ -266,7 +267,16 @@ class ApiSchemaTest extends TestCase
         $method = new \ReflectionMethod($type, 'modelClass');
         $method->setAccessible(true);
         $class = $method->invoke($type);
-        return array_keys((new $class(new UnconnectedPdo()))->mapper()->map);
+        // Anorm's Mango parser reads these words as operators (bank_trans' `type`), so
+        // a selector or sort cannot name them: FaModelType::queryableFields() leaves them out.
+        $operators = (new \ReflectionClassConstant(ModelType::class, 'OPERATOR_WORDS'))->getValue();
+
+        return array_values(array_filter(
+            array_keys((new $class(new UnconnectedPdo()))->mapper()->map),
+            static function ($name) use ($operators): bool {
+                return !in_array(strtolower((string) $name), $operators, true);
+            }
+        ));
     }
 
     public function testQueryAndMutationFieldsAreAlphabetical(): void

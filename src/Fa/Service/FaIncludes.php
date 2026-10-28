@@ -41,6 +41,25 @@ final class FaIncludes
     }
 
     /**
+     * Bank entries and reconciliation: gl_db.inc brings gl_db_bank_accounts.inc
+     * (get_max_reconciled, update_reconciled_values, get_quick_entry); sales_db.inc
+     * get_customer_name and suppliers_db.inc get_supplier_name, which
+     * payment_person_name() (includes/types.inc) calls for a counterparty.
+     */
+    public static function banking(): void
+    {
+        foreach (
+            [
+            'gl/includes/gl_db.inc',
+            'sales/includes/sales_db.inc',
+            'purchasing/includes/db/suppliers_db.inc',
+            ] as $file
+        ) {
+            Bootstrap::includeFa($file);
+        }
+    }
+
+    /**
      * What a Cart needs beyond boot. includes/ui.inc is taken for granted by
      * FrontAccounting's sales code (count_array() in sales_db.inc, for one); other
      * extensions include it for the same reason. sales_order_ui.inc is for

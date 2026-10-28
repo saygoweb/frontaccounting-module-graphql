@@ -14,6 +14,7 @@ use FA\GraphQL\Type\Allocation\AllocationType;
 use FA\GraphQL\Type\Auth\AuthMutations;
 use FA\GraphQL\Type\Auth\AuthPayloadType;
 use FA\GraphQL\Type\BankAccount\BankAccountType;
+use FA\GraphQL\Type\BankTransaction\BankTransactionType;
 use FA\GraphQL\Type\Branch\BranchCreateInput;
 use FA\GraphQL\Type\Branch\BranchType;
 use FA\GraphQL\Type\Branch\BranchUpdateInput;
@@ -99,6 +100,15 @@ class ApiSchema extends Schema
                     $this->countField('bankAccountCount', BankAccountType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('bankAccountList', $this->type(BankAccountType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    $this->countField('bankTransactionCount', BankTransactionType::class),
+                    // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'bankTransactionList',
+                        $this->type(BankTransactionType::class),
+                        'resolveList'
+                    )
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
                     $this->countField('branchCount', BranchType::class),
