@@ -2,6 +2,9 @@
 
 namespace FA\GraphQL\Tests\Integration\Banking;
 
+use FA\GraphQL\Fa\Service\BankReconciliationService;
+use FA\GraphQL\Fa\Service\ServiceCall;
+
 /**
  * bankReconciliation and bankReconcile (Bank reconciliation spec §3.2, §3.3), checked
  * against FrontAccounting's own get_max_reconciled() and the Reconcile Bank Account
@@ -222,6 +225,75 @@ class BankReconciliationTest extends BankingTestCase
 
         $this->assertSame('BAD_INPUT', $result['errors'][0]['extensions']['code'] ?? null, json_encode($result));
         $this->assertStringContainsString('both', $result['errors'][0]['message']);
+    }
+
+    public function testAVoidedEntryCanBeUntickedFromItsStatement(): void
+    {
+        // FrontAccounting voids a bank entry by zeroing its amount and leaves it reconciled.
+        $a = $this->entry(['amount' => 0, 'reconciled' => self::JAN]);
+
+        $this->reconciled(['statementDate' => self::JAN, 'endingBalance' => 0, 'unreconcile' => [(string) $a]]);
+
+        $this->assertNull($this->reconciledDate($a));
+    }
+
+    /** An entry whose reconciled is MySQL's zero date, as old FrontAccounting data can have. */
+    private function zeroDated(): int
+    {
+        $this->pdo()->exec("SET SESSION sql_mode = ''");
+
+        return $this->entry(['reconciled' => '0000-00-00']);
+    }
+
+    public function testAZeroReconciledDateIsNotAStatement(): void
+    {
+        $this->zeroDated();
+        $this->entry(['reconciled' => self::JAN]);
+
+        $dates = $this->summary(self::JAN)['statementDates'];
+
+        $this->assertSame(self::JAN, $dates[0]);
+        $this->assertNotContains(null, $dates);
+        $this->assertNotContains('0000-00-00', $dates);
+    }
+
+    public function testAZeroReconciledDateCountsAsNotReconciled(): void
+    {
+        $tick = $this->zeroDated();
+        $untick = $this->entry(['reconciled' => '0000-00-00']);
+
+        $this->reconciled([
+            'statementDate' => self::JAN, 'endingBalance' => 0, 'reconcile' => [(string) $tick],
+            'unreconcile' => [(string) $untick],
+        ]);
+
+        $this->assertSame(self::JAN, $this->reconciledDate($tick));
+        $this->assertSame('0000-00-00', $this->reconciledDate($untick));
+    }
+
+    public function testAFailurePartWayRollsBack(): void
+    {
+        $a = $this->entry();
+        $account = 'SELECT last_reconciled_date, ending_reconcile_balance FROM 0_bank_accounts WHERE id = '
+            . self::ACCOUNT;
+        $before = $this->pdo()->query($account)->fetch(\PDO::FETCH_ASSOC);
+        $service = $this->container->get(BankReconciliationService::class);
+
+        try {
+            ServiceCall::run(function () use ($service, $a): void {
+                $service->reconcile([
+                    'bankAccountId' => (string) self::ACCOUNT, 'statementDate' => self::JAN,
+                    'endingBalance' => 999.99, 'reconcile' => [(string) $a],
+                ]);
+                throw new \RuntimeException('a later step fails');
+            });
+            $this->fail('the failure did not propagate');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('a later step fails', $e->getMessage());
+        }
+
+        $this->assertNull($this->reconciledDate($a));
+        $this->assertSame($before, $this->pdo()->query($account)->fetch(\PDO::FETCH_ASSOC));
     }
 
     public function testANonNumericIdIsBadInput(): void

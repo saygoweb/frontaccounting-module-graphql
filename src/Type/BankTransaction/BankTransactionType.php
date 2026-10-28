@@ -39,16 +39,17 @@ class BankTransactionType extends BankTransactionTypeBase
                 })
                 ->build(),
             FieldBuilder::create('memo', Type::string())
-                ->setDescription('The transaction\'s memo (comments).')
+                ->setDescription('The transaction\'s memo: its comments, joined as FrontAccounting\'s '
+                    . 'get_comments_string() joins them.')
                 ->setResolver(function (array $row, $args, $context): ?string {
+                    // get_comments_string() (includes/ui/ui_view.inc) over get_comments()'s query.
                     $statement = $context->get(\PDO::class)->prepare(
-                        'SELECT memo_ FROM ' . CompanyContext::prefix()
-                        . 'comments WHERE type = ? AND id = ? ORDER BY date_ LIMIT 1'
+                        'SELECT memo_ FROM ' . CompanyContext::prefix() . 'comments WHERE type = ? AND id = ?'
                     );
                     $statement->execute([(int) $row['transType'], (int) $row['transNo']]);
-                    $memo = $statement->fetchColumn();
+                    $memo = implode(" \n", array_map('strval', $statement->fetchAll(\PDO::FETCH_COLUMN)));
 
-                    return $memo === false ? null : (string) $memo;
+                    return $memo === '' ? null : $memo;
                 })
                 ->build(),
             FieldBuilder::create('counterparty', Type::string())
@@ -56,6 +57,10 @@ class BankTransactionType extends BankTransactionTypeBase
                     . 'misc name, as FrontAccounting\'s payment_person_name() gives it.')
                 ->setResolver(function (array $row): ?string {
                     FaIncludes::banking();
+                    // payment_person_name() reads a missing quick entry's description off false.
+                    if ((int) $row['personType'] === PT_QUICKENTRY && !\get_quick_entry($row['personId'])) {
+                        return null;
+                    }
                     $name = \payment_person_name((int) $row['personType'], (string) $row['personId'], false);
 
                     return $name === '' || $name === null ? null : (string) $name;

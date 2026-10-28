@@ -101,12 +101,33 @@ class BankTransactionListTest extends BankingTestCase
         }
     }
 
-    public function testListingNeedsBankTransView(): void
+    public function testAMissingQuickEntryHasNoCounterparty(): void
+    {
+        $id = $this->entry(['person_type_id' => 4, 'person_id' => '99999']);
+
+        $this->assertSame([['counterparty' => null]], $this->list(['id' => (string) $id], 'counterparty'));
+    }
+
+    public function testTheMemoJoinsEveryCommentAsTheScreenDoes(): void
+    {
+        $id = $this->entry();
+        $comment = $this->pdo()->prepare('INSERT INTO 0_comments (type, id, date_, memo_) VALUES (1, ?, ?, ?)');
+        $comment->execute([990001, '2031-01-07', 'First line']);
+        $comment->execute([990001, '2031-01-08', 'Second line']);
+        $none = $this->entry();
+
+        $this->assertSame(\get_comments_string(1, 990001), $this->list(['id' => (string) $id], 'memo')[0]['memo']);
+        $this->assertSame("First line \nSecond line", $this->list(['id' => (string) $id], 'memo')[0]['memo']);
+        $this->assertSame([['memo' => null]], $this->list(['id' => (string) $none], 'memo'));
+    }
+
+    public function testListingAndCountingNeedBankTransView(): void
     {
         $this->enter('apiorders');
 
-        $result = $this->gql('{ bankTransactionList { id } }');
-
-        $this->assertSame('FORBIDDEN', $result['errors'][0]['extensions']['code'] ?? null, json_encode($result));
+        foreach (['{ bankTransactionList { id } }', '{ bankTransactionCount }'] as $document) {
+            $result = $this->gql($document);
+            $this->assertSame('FORBIDDEN', $result['errors'][0]['extensions']['code'] ?? null, json_encode($result));
+        }
     }
 }

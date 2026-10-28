@@ -71,11 +71,13 @@ final class BankReconciliationService
                     $problems[] = [$field, "$id is not an entry of bank account $accountId"];
                     continue;
                 }
-                if ((float) $row['amount'] == 0.0) {
+                // FrontAccounting voids an entry by zeroing it and leaves it reconciled, so a
+                // voided entry may still be unticked from its statement (spec §3.3).
+                if ($field === 'reconcile' && (float) $row['amount'] == 0.0) {
                     $problems[] = [$field, "$id is voided"];
                     continue;
                 }
-                $on = $row['reconciled'] === null ? null : (string) $row['reconciled'];
+                $on = $rows[$id]['reconciled'];
                 if ($field === 'reconcile' && (string) $row['trans_date'] > $date) {
                     $problems[] = [$field, "$id is dated {$row['trans_date']}, after the statement"];
                 } elseif ($on !== null && $on !== $date) {
@@ -144,7 +146,11 @@ final class BankReconciliationService
 
     /**
      * @param int[] $ids
-     * @return array<int, array<string, mixed>> bank_trans rows by id
+     * Locked FOR UPDATE (reconcile() runs inside FaTransaction's transaction), so no
+     * other request changes them between the checks and the writes.
+     *
+     * @return array<int, array<string, mixed>> bank_trans rows by id, `reconciled` as
+     *     DateConversion::fromSql() reads it (null for NULL and the zero date)
      */
     private static function rows(array $ids): array
     {
@@ -153,11 +159,13 @@ final class BankReconciliationService
         }
         $result = db_query(
             'SELECT id, bank_act, amount, trans_date, reconciled FROM ' . TB_PREF . 'bank_trans WHERE id IN ('
-            . implode(', ', array_map('intval', $ids)) . ')',
+            . implode(', ', array_map('intval', $ids)) . ') FOR UPDATE',
             'could not read the bank entries'
         );
         $rows = [];
         while ($row = db_fetch($result)) {
+            // MySQL's zero date is old data's "not reconciled", as NULL is.
+            $row['reconciled'] = DateConversion::fromSql($row['reconciled']);
             $rows[(int) $row['id']] = $row;
         }
 
@@ -169,7 +177,7 @@ final class BankReconciliationService
     {
         $result = db_query(
             'SELECT DISTINCT reconciled FROM ' . TB_PREF . 'bank_trans WHERE bank_act = ' . db_escape($accountId)
-            . ' AND reconciled IS NOT NULL ORDER BY reconciled DESC',
+            . " AND reconciled IS NOT NULL AND reconciled <> '0000-00-00' ORDER BY reconciled DESC",
             'could not read the statement dates'
         );
         $dates = [];

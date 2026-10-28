@@ -70,7 +70,7 @@ type BankTransactionType {
   personType: Int         # person_type_id (0 misc, 2 customer, 3 supplier, 4 quick entry, ...)
   personId: String        # person_id: an id, or for misc a free-text name
   voided: Boolean!        # amount 0 (FA voids a bank entry by zeroing it); computed in SQL
-  memo: String            # comments.memo_ for (transType, transNo)
+  memo: String            # every comments.memo_ for (transType, transNo), joined as get_comments_string() does; null when none
   counterparty: String    # FA's payment_person_name(personType, personId, false): customer/supplier name, quick entry, misc name
 }
 ```
@@ -97,7 +97,7 @@ type BankReconciliation {
   lastReconciledDate: Date   # bank_accounts.last_reconciled_date
   storedEndingBalance: Float # bank_accounts.ending_reconcile_balance, when lastReconciledDate = statementDate
   difference: Float          # storedEndingBalance - endingBalance; null without a stored balance. 0 when done.
-  statementDates: [Date!]!   # the account's distinct reconciled dates, newest first
+  statementDates: [Date!]!   # the account's distinct reconciled dates, newest first (not the zero date)
 }
 
 bankReconciliation(bankAccountId: ID!, statementDate: Date!): BankReconciliation!
@@ -133,7 +133,9 @@ Refused as `BAD_INPUT`, naming every offending id in one message (nothing
 written):
 
 - an id that is not a bank entry of `bankAccountId`;
-- a voided entry (amount 0; the screen does not list them);
+- a voided entry (amount 0; the screen does not list them), for `reconcile`.
+  `unreconcile` accepts one: FrontAccounting voids by zeroing the amount and leaves
+  `reconciled` set, so a voided entry could otherwise never leave its statement;
 - `reconcile`: an entry dated after `statementDate` (the screen lists only
   `trans_date <= statementDate`);
 - `reconcile`: an entry reconciled to a *different* date (unreconcile it from that
@@ -143,6 +145,9 @@ written):
 
 Ticking an entry already reconciled to `statementDate`, and unticking an entry
 that is not reconciled, change nothing, so repeating a call is safe (idempotent).
+
+A `reconciled` of MySQL's zero date (`0000-00-00`, old data) counts as not
+reconciled: such an entry can be ticked, and unticking it changes nothing.
 
 Returns the summary of §3.2 after the change.
 
@@ -157,11 +162,15 @@ code. Changes in `frontaccounting-module-mcp`:
   {"$lte": "<statement date>"}}. A statement's entries: {"reconciled":
   "<statement date>"}."*
 - Annotations: `bankReconcile` is `idempotentHint: true` (a generated mutation
-  named in an explicit idempotent list, beside the `*Update` rule).
+  named in an explicit idempotent list, beside the `*Update` rule) and
+  `destructiveHint: true` (it can untick entries and replace the account's last
+  reconciliation, so clients should confirm; an explicit destructive list beside
+  the `*Delete` rule).
 - `docs/CONNECTING.md`: a short "Reconciling a statement" section with §1's five
   steps.
-- Catalog test: the four tools exist for a role with `SA_BANKTRANSVIEW` and
-  `SA_RECONCILE`, and not otherwise.
+- Catalog test: the four tools exist. The catalog is the same for every role (it is
+  built from the schema); a role without `SA_BANKTRANSVIEW` or `SA_RECONCILE` sees
+  the tools, and its calls are refused `FORBIDDEN`.
 
 ## 5. Errors
 

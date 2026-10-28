@@ -2,7 +2,6 @@
 
 namespace FA\GraphQL\Tests\Unit;
 
-use Anorm\GraphQL\ModelType;
 use DI\ContainerBuilder;
 use FA\GraphQL\ApiSchema;
 use FA\GraphQL\Db\UnconnectedPdo;
@@ -268,16 +267,7 @@ class ApiSchemaTest extends TestCase
         $method = new \ReflectionMethod($type, 'modelClass');
         $method->setAccessible(true);
         $class = $method->invoke($type);
-        // Anorm's Mango parser reads these words as operators, so a selector or sort
-        // cannot name them: FaModelType::queryableFields() leaves them out.
-        $operators = (new \ReflectionClassConstant(ModelType::class, 'OPERATOR_WORDS'))->getValue();
-
-        return array_values(array_filter(
-            array_keys((new $class(new UnconnectedPdo()))->mapper()->map),
-            static function ($name) use ($operators): bool {
-                return !in_array(strtolower((string) $name), $operators, true);
-            }
-        ));
+        return array_keys((new $class(new UnconnectedPdo()))->mapper()->map);
     }
 
     public function testQueryAndMutationFieldsAreAlphabetical(): void
