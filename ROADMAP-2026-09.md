@@ -16,6 +16,7 @@ All of the following is merged on `main` and green in CI on {upstream FrontAccou
 | Release 3 — Billing | Deliveries; invoices from deliveries or an order in one step; customer payments and allocations; voids; emailing invoices through FrontAccounting's `rep107` | `2026-09-26-release-3-billing-design.md` |
 | Release 4 — Extensions and recurring invoices | An extension contract discovered through FrontAccounting's hooks (root fields, contributions to the sales order Type and inputs, write participants in the core's transaction); `sgw_sales` as the first extension, serving recurrence and recurring invoice generation (`recurringDueList`, `recurringGenerate` with email) | `2026-09-28-release-4-extensions-recurring-design.md` |
 | Machine tokens | Long-lived, revocable bearer tokens for server-to-server clients, issued by `bin/fa-token` | Foundation spec §3.7 |
+| Bank reconciliation | bankTransactionList/Count; bankReconciliation and bankReconcile, as FA's Reconcile Bank Account screen | `2026-10-28-bank-reconciliation-design.md` |
 | Dev fixtures | `HDOM`/`HGEN1` hosting items and an example reseller for development | — |
 
 The first client, the `saygoweb.com-my` hosting panel, runs its reseller billing
@@ -47,7 +48,7 @@ Not started; each is its own release-sized design.
 - **Accounts payable** — suppliers, purchase orders, receipts, supplier invoices and
   credits, supplier payments and allocations.
 - **General ledger and banking** — journal entries, bank deposits and payments not
-  tied to customers, transfers, reconciliation, the chart of accounts, fiscal years,
+  tied to customers, transfers, the chart of accounts, fiscal years,
   GL inquiries (trial balance).
 - **Inventory** — item delete, kits and purchasing, stock adjustments and transfers,
   stock on hand by location (item and price maintenance are done).

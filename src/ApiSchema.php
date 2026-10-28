@@ -3,17 +3,24 @@
 namespace FA\GraphQL;
 
 use Anorm\GraphQL\GraphQLUtils;
+use Anorm\GraphQL\Type\DateType;
 use Anorm\GraphQL\Type\MangoInput;
 use DI\Container;
 use FA\GraphQL\Auth\Guard;
+use FA\GraphQL\Fa\DateConversion;
 use FA\GraphQL\Fa\FaText;
+use FA\GraphQL\Fa\Service\BankReconciliationService;
 use FA\GraphQL\Fa\Service\IntKey;
 use FA\GraphQL\Fa\Service\InvoiceMailer;
 use FA\GraphQL\Fa\Service\PriceQuoteService;
+use FA\GraphQL\Fa\Service\ServiceCall;
 use FA\GraphQL\Type\Allocation\AllocationType;
 use FA\GraphQL\Type\Auth\AuthMutations;
 use FA\GraphQL\Type\Auth\AuthPayloadType;
 use FA\GraphQL\Type\BankAccount\BankAccountType;
+use FA\GraphQL\Type\BankReconciliation\BankReconcileInput;
+use FA\GraphQL\Type\BankReconciliation\BankReconciliationType;
+use FA\GraphQL\Type\BankTransaction\BankTransactionType;
 use FA\GraphQL\Type\Branch\BranchCreateInput;
 use FA\GraphQL\Type\Branch\BranchType;
 use FA\GraphQL\Type\Branch\BranchUpdateInput;
@@ -99,6 +106,32 @@ class ApiSchema extends Schema
                     $this->countField('bankAccountCount', BankAccountType::class),
                     // anorm-graphql
                     GraphQLUtils::createListField('bankAccountList', $this->type(BankAccountType::class), 'resolveList')
+                        ->addArgument('query', $this->type(MangoInput::class))
+                        ->build(),
+                    'bankReconciliation' => [
+                        'type' => Type::nonNull($this->type(BankReconciliationType::class)),
+                        'description' => "A bank account's reconciliation at a statement date, as FrontAccounting's "
+                            . 'Reconcile Bank Account screen shows it. Needs SA_RECONCILE.',
+                        'args' => [
+                            'bankAccountId' => ['type' => Type::nonNull(Type::id())],
+                            'statementDate' => ['type' => Type::nonNull(DateType::instance())],
+                        ],
+                        'resolve' => function ($root, array $args) {
+                            Guard::require('SA_RECONCILE');
+
+                            return $this->type(BankReconciliationService::class)->summary(
+                                IntKey::parse($args['bankAccountId'], 'bankAccountId'),
+                                DateConversion::iso($args['statementDate'], 'statementDate')
+                            );
+                        },
+                    ],
+                    $this->countField('bankTransactionCount', BankTransactionType::class),
+                    // anorm-graphql
+                    GraphQLUtils::createListField(
+                        'bankTransactionList',
+                        $this->type(BankTransactionType::class),
+                        'resolveList'
+                    )
                         ->addArgument('query', $this->type(MangoInput::class))
                         ->build(),
                     $this->countField('branchCount', BranchType::class),
@@ -263,6 +296,28 @@ class ApiSchema extends Schema
             'mutation' => new ObjectType([
                 'name' => 'Mutation',
                 'fields' => [
+                    'bankReconcile' => [
+                        'type' => Type::nonNull($this->type(BankReconciliationType::class)),
+                        'description' => 'Tick bank entries reconciled to a statement date, or untick them, and record '
+                            . "the statement's closing balance, as the Reconcile Bank Account screen does; all or "
+                            . 'nothing. Repeating a call changes nothing. Needs SA_RECONCILE.',
+                        'args' => [
+                            'input' => ['type' => Type::nonNull($this->type(BankReconcileInput::class))],
+                        ],
+                        'resolve' => function ($root, array $args) {
+                            Guard::require('SA_RECONCILE');
+                            $service = $this->type(BankReconciliationService::class);
+                            $input = $args['input'];
+                            ServiceCall::run(function () use ($service, $input): void {
+                                $service->reconcile($input);
+                            });
+
+                            return $service->summary(
+                                IntKey::parse($input['bankAccountId'], 'bankAccountId'),
+                                DateConversion::iso($input['statementDate'], 'statementDate')
+                            );
+                        },
+                    ],
                     // anorm-graphql
                     GraphQLUtils::createListField('branchCreate', $this->type(BranchType::class), 'resolveCreate')
                         ->addArgument(

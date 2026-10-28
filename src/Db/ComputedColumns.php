@@ -52,6 +52,30 @@ final class ComputedColumns
     }
 
     /**
+     * bank_trans, with $columns added: the same derived-table join as debtorTrans(),
+     * on bank_trans' primary key `id`. Each column is SQL over `t`, the bank_trans row.
+     *
+     * @param array<string, string> $columns column name => SQL expression
+     */
+    public static function bankTrans(string $prefix, array $columns): string
+    {
+        $table = $prefix . 'bank_trans';
+        $select = [];
+        foreach ($columns as $name => $sql) {
+            $select[] = "$sql AS `$name`";
+        }
+
+        return $table . '` NATURAL JOIN (SELECT t.`id`, ' . implode(', ', $select)
+            . " FROM `$table` t) AS `{$table}_computed";
+    }
+
+    /** A voided bank entry: FrontAccounting voids one by zeroing it (void_bank_trans()). */
+    public static function bankTransVoided(): string
+    {
+        return 't.`amount` = 0';
+    }
+
+    /**
      * FrontAccounting's Total of an invoice (custalloc_db.inc): its prepayment amount
      * if it has one, else items, tax, freight and freight tax plus ov_discount, which
      * FrontAccounting adds; to the cent.

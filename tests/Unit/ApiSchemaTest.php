@@ -70,12 +70,12 @@ class ApiSchemaTest extends TestCase
         $query = array_keys($schema->getQueryType()->getFields());
         sort($query);
         $lists = [
-            'allocation', 'bankAccount', 'branch', 'contact', 'creditStatus', 'currency', 'customer',
+            'allocation', 'bankAccount', 'bankTransaction', 'branch', 'contact', 'creditStatus', 'currency', 'customer',
             'customerPayment', 'deliveryLine', 'delivery', 'invoiceLine', 'invoice', 'location', 'paymentTerms',
             'price', 'salesArea', 'salesOrderLine', 'salesOrder', 'salesType', 'salesman', 'shipper', 'stockItem',
             'taxGroup',
         ];
-        $expected = ['apiVersion', 'me', 'priceQuote'];
+        $expected = ['apiVersion', 'bankReconciliation', 'me', 'priceQuote'];
         foreach ($lists as $entity) {
             // Issue #17: every list has a count beside it.
             $expected[] = $entity . 'List';
@@ -86,7 +86,8 @@ class ApiSchemaTest extends TestCase
         $this->assertSame($expected, $query);
         $this->assertSame(
             [
-                'branchCreate', 'branchDelete', 'branchUpdate', 'contactCreate', 'contactDelete', 'contactUpdate',
+                'bankReconcile', 'branchCreate', 'branchDelete', 'branchUpdate', 'contactCreate', 'contactDelete',
+                'contactUpdate',
                 'customerCreate', 'customerDelete', 'customerPaymentCreate', 'customerPaymentDelete',
                 'customerPaymentUpdate', 'customerUpdate', 'deliveryCreate', 'deliveryDelete',
                 'invoiceCreate', 'invoiceDelete', 'invoiceEmail', 'login', 'priceDelete', 'priceSet',
@@ -166,7 +167,7 @@ class ApiSchemaTest extends TestCase
             $this->assertSame('MangoInput', (string) $count->getArg('query')->getType(), $countName);
             $this->assertStringContainsString($name, (string) $count->description, $countName);
         }
-        $this->assertSame(23, $lists);
+        $this->assertSame(24, $lists);
     }
 
     /**
@@ -242,7 +243,7 @@ class ApiSchemaTest extends TestCase
                 $name . ' and its count'
             );
         }
-        $this->assertSame(23, $lists);
+        $this->assertSame(24, $lists);
     }
 
     /**

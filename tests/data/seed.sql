@@ -90,6 +90,22 @@ UPDATE `0_security_roles`
 SET `areas` = CONCAT(`areas`, ';769')
 WHERE `role` = 'GraphQL API' AND FIND_IN_SET('769', REPLACE(`areas`, ';', ',')) = 0;
 
+-- Bank reconciliation (Bank reconciliation spec §3): bank entries are listed with
+-- SA_BANKTRANSVIEW = SS_GL|1 = 3841 and reconciled with SA_RECONCILE = SS_GL|7 =
+-- 3847, in section SS_GL = 15 << 8 = 3840 (includes/access_levels.inc). Appended
+-- only when missing. 'GraphQL Orders' (apiorders) stays without them.
+UPDATE `0_security_roles`
+SET `sections` = CONCAT(`sections`, ';3840')
+WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3840', REPLACE(`sections`, ';', ',')) = 0;
+
+UPDATE `0_security_roles`
+SET `areas` = CONCAT(`areas`, ';3841')
+WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3841', REPLACE(`areas`, ';', ',')) = 0;
+
+UPDATE `0_security_roles`
+SET `areas` = CONCAT(`areas`, ';3847')
+WHERE `role` = 'GraphQL API' AND FIND_IN_SET('3847', REPLACE(`areas`, ';', ',')) = 0;
+
 -- The company's From: address for emailed documents (Release 3 spec §6). The demo
 -- company has none; set only when empty, so a real value is never overwritten.
 UPDATE `0_sys_prefs` SET `value` = 'accounts@example.com'

@@ -29,6 +29,7 @@ areas apply; one company per request; every response is JSON.
 | Deliveries | `deliveryList`, `deliveryLineList` | `deliveryCreate` (whole or partial), `deliveryDelete` (void) |
 | Invoices | `invoiceList` (with `lines`, `total`, `outstanding`), `invoiceLineList` | `invoiceCreate` (from deliveries, or an order in one step), `invoiceDelete` (void), `invoiceEmail` (FrontAccounting's `rep107`) |
 | Payments | `customerPaymentList` (with `allocations`, `unallocated`), `allocationList` | `customerPaymentCreate` (with allocations), `customerPaymentUpdate` (reallocate), `customerPaymentDelete` (void) |
+| Bank entries and reconciliation | `bankTransactionList`, `bankTransactionCount` (`SA_BANKTRANSVIEW`); `bankReconciliation(bankAccountId, statementDate)` — the Reconcile Bank Account screen's summary (`SA_RECONCILE`) | `bankReconcile` — tick and untick entries to a statement and record its closing balance, all or nothing (`SA_RECONCILE`) |
 
 Every list takes `query: MangoInput` (a JSON Mango selector, `limit`, `skip`,
 `sort`). A `sort` item is a field, ascending, or `-field` / `field desc` for
@@ -125,8 +126,8 @@ $pair = $body['data']['login'];
 A list is a plain array: a page exactly `limit` long might be the last one, and
 a list says nothing of how many rows match. Beside every list that takes a
 `query` is `<entity>Count(query: MangoInput): Int!` (`allocationCount`,
-`bankAccountCount`, `branchCount`, `contactCount`, `creditStatusCount`,
-`currencyCount`, `customerCount`, `customerPaymentCount`, `deliveryCount`,
+`bankAccountCount`, `bankTransactionCount`, `branchCount`, `contactCount`,
+`creditStatusCount`, `currencyCount`, `customerCount`, `customerPaymentCount`, `deliveryCount`,
 `deliveryLineCount`, `invoiceCount`, `invoiceLineCount`, `locationCount`,
 `paymentTermsCount`, `salesAreaCount`, `salesOrderCount`, `salesOrderLineCount`,
 `salesTypeCount`, `salesmanCount`, `shipperCount`, `stockItemCount`,
@@ -433,6 +434,18 @@ equal `amount`. `allocationList` reads a customer's cross-referenced allocations
 and `customerList`'s `balance` reads what it owes: an object (`balance`, `due`,
 `overdue1`, `overdue2`, `currency`), zero on every bucket once the customer is
 settled.
+
+### Bank reconciliation
+
+`bankTransactionList` lists a bank account's entries (`bank_trans`); the screen's
+"to tick" list for a statement dated D is the selector `{"bankAccountId": "1",
+"reconciled": null, "voided": false, "date": {"$lte": D}}`.
+`bankReconciliation(bankAccountId, statementDate)` returns the screen's summary
+(beginning, reconciled and ending balances, the recorded closing balance and the
+difference, 0 when done), and `bankReconcile(input: {bankAccountId, statementDate,
+endingBalance, reconcile: [ids], unreconcile: [ids]})` ticks and unticks entries as
+the screen does, all or nothing; repeating a call changes nothing. Both need
+`SA_RECONCILE`. Details: `docs/superpowers/specs/2026-10-28-bank-reconciliation-design.md`.
 
 ### Emailing invoices
 
