@@ -61,7 +61,7 @@ Access: `SA_BANKTRANSVIEW`.
 type BankTransactionType {
   id: ID!                 # bank_trans.id: the row a reconciliation ticks
   transType: Int          # FA transaction type (1 payment, 2 deposit, 4 transfer, 12 customer payment, 22 supplier payment, ...)
-  transNo: ID             # the transaction's number within its type
+  transNo: Int            # the transaction's number within its type
   bankAccountId: ID       # bank_act
   reference: String       # ref
   date: Date              # trans_date

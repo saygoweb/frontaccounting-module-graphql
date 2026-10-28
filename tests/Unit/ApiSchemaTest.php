@@ -76,7 +76,7 @@ class ApiSchemaTest extends TestCase
             'price', 'salesArea', 'salesOrderLine', 'salesOrder', 'salesType', 'salesman', 'shipper', 'stockItem',
             'taxGroup',
         ];
-        $expected = ['apiVersion', 'me', 'priceQuote'];
+        $expected = ['apiVersion', 'bankReconciliation', 'me', 'priceQuote'];
         foreach ($lists as $entity) {
             // Issue #17: every list has a count beside it.
             $expected[] = $entity . 'List';
@@ -87,7 +87,8 @@ class ApiSchemaTest extends TestCase
         $this->assertSame($expected, $query);
         $this->assertSame(
             [
-                'branchCreate', 'branchDelete', 'branchUpdate', 'contactCreate', 'contactDelete', 'contactUpdate',
+                'bankReconcile', 'branchCreate', 'branchDelete', 'branchUpdate', 'contactCreate', 'contactDelete',
+                'contactUpdate',
                 'customerCreate', 'customerDelete', 'customerPaymentCreate', 'customerPaymentDelete',
                 'customerPaymentUpdate', 'customerUpdate', 'deliveryCreate', 'deliveryDelete',
                 'invoiceCreate', 'invoiceDelete', 'invoiceEmail', 'login', 'priceDelete', 'priceSet',
